@@ -1,0 +1,8 @@
+.git
+.gitignore
+node_modules
+index.html
+README.md
+.DS_Store
+.vercel
+# Важно: НЕ добавляйте сюда Dockerfile, иначе Google его не увидит!
