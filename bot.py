@@ -106,7 +106,7 @@ async def cmd_start(message: types.Message):
     Storage.save_user(user_id, {"username": message.from_user.username})
     Storage.set_session(user_id, "IDLE")
     await message.answer(
-        "Привет! Я Nano Banana Bot 🍌.\n\nСоздавай фотореалистичные арты со своим лицом на Modal.\nНачни с настройки профиля!",
+        "Привет! Я Nano Banana Bot 🍌.\n\nСоздавай фотореалистичные арты со своим лицом.\nНачни с настройки профиля!",
         reply_markup=menus["main"]
     )
 
