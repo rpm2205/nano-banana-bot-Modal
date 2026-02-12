@@ -11,7 +11,8 @@ image = (
         "aiogram>=3.0.0",
         "google-genai", 
         "requests",
-        "pillow"
+        "pillow",
+        "fastapi[standard]"
     )
 )
 
