@@ -16,13 +16,18 @@ image = (
     )
 )
 
-app = modal.App("nano-banana-bot", image=image)
+# Монтируем весь проект, чтобы в контейнере были bot.py, gemini.py, storage.py
+app = modal.App(
+    "nano-banana-bot",
+    image=image,
+    mounts=[modal.Mount.from_local_dir(".", remote_path="/root")]
+)
 
 # Подключаем секреты (API ключи)
 secrets = [modal.Secret.from_name("nano-banana-bot-secrets")]
 
-@app.function(secrets=secrets, keep_warm=1)
-@modal.web_endpoint(method="POST")
+@app.function(secrets=secrets, min_containers=1)
+@modal.fastapi_endpoint(method="POST")
 async def telegram_webhook(request: dict):
     """
     Вебхук, который принимает обновления от Telegram.
