@@ -21,8 +21,12 @@ async def analyze_style(image_bytes: bytes) -> str:
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=[
-                types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
-                prompt
+                types.Content(
+                    parts=[
+                        types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+                        types.Part(text=prompt),
+                    ]
+                )
             ]
         )
         return response.text
@@ -58,7 +62,7 @@ async def generate_final_image(face_bytes: bytes, style_bytes: bytes, user_trait
     if style_bytes:
         parts.append(types.Part.from_bytes(data=style_bytes, mime_type="image/jpeg"))
         
-    parts.append(prompt_text)
+    parts.append(types.Part(text=prompt_text))
 
     # Конфигурация размера
     # В Python SDK конфиг передается немного иначе, используем types
