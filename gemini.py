@@ -13,7 +13,13 @@ async def analyze_style(image_bytes: bytes) -> str:
     """Анализирует стиль изображения для создания промпта."""
     try:
         client = get_client()
-        prompt = "Analyze this image. Describe the ART STYLE, LIGHTING, COMPOSITION, and MOOD in a concise, descriptive paragraph. Do NOT describe the specific person."
+        prompt = (
+            "Проанализируй это изображение-референс. "
+            "Сформируй на русском языке готовый промпт для генерации изображения в Nano Banana, "
+            "в котором будут отражены СТИЛЬ, ОСВЕЩЕНИЕ, КОМПОЗИЦИЯ и НАСТРОЕНИЕ сцены. "
+            "Не описывай внешность конкретного человека. "
+            "Ответ верни одной компактной связной формулировкой без списков и заголовков."
+        )
         
         response = client.models.generate_content(
             model='gemini-2.5-flash',
@@ -29,27 +35,31 @@ async def analyze_style(image_bytes: bytes) -> str:
         return response.text
     except Exception as e:
         print(f"Style Analysis Error: {e}")
-        return "Cinematic lighting, high quality, photorealistic style."
+        return "Кинематографичное освещение, фотореалистичный стиль, высокая детализация."
 
 async def generate_final_image(face_bytes: bytes, style_bytes: bytes, user_traits: dict, style_desc: str, user_hints: str, params: dict):
     """Генерирует финальное изображение."""
     client = get_client()
 
+    image_size = "1K" if params.get('quality') == '1K' else "2K"
+    aspect_ratio = params.get('ratio', '9:16')
+    eyes = user_traits.get('eyes') or "естественные"
+    hair_color = user_traits.get('hairColor') or "естественный"
+    hair_length = user_traits.get('hairLength') or "естественная"
+
     prompt_text = f"""
-    Generate a photorealistic image.
-    SUBJECT: Person from First Image.
-    EYES: {user_traits.get('eyes', 'default')}. HAIR: {user_traits.get('hairColor', 'default')}, {user_traits.get('hairLength', 'default')}.
-    STYLE: {style_desc}.
-    DETAILS: {user_hints or '-'}.
-    High quality, 8k.
+    Сгенерируй фотореалистичное изображение.
+    СУБЪЕКТ: человек с первого изображения.
+    ГЛАЗА: {eyes}. ВОЛОСЫ: {hair_color}, {hair_length}.
+    СТИЛЬ: {style_desc or 'сохранить естественный фотореализм'}.
+    ДЕТАЛИ: {user_hints or '-'}.
     """
 
     if not style_bytes:
         prompt_text = f"""
-        Photorealistic portrait of person from provided image.
-        EYES: {user_traits.get('eyes', 'default')}. HAIR: {user_traits.get('hairColor', 'default')}, {user_traits.get('hairLength', 'default')}.
-        DETAILS: {user_hints or '-'}.
-        High quality.
+        Сгенерируй фотореалистичный портрет человека с предоставленного изображения.
+        ГЛАЗА: {eyes}. ВОЛОСЫ: {hair_color}, {hair_length}.
+        ДЕТАЛИ: {user_hints or '-'}.
         """
 
     parts = []
@@ -61,11 +71,6 @@ async def generate_final_image(face_bytes: bytes, style_bytes: bytes, user_trait
         
     parts.append(types.Part(text=prompt_text))
 
-    # Конфигурация размера
-    # В Python SDK конфиг передается немного иначе, используем types
-    image_size = "1K" if params.get('quality') == '1K' else "2K"
-    aspect_ratio = params.get('ratio', '9:16')
-    
     # Модель Gemini 3 Pro Image Preview
     response = client.models.generate_content(
         model='gemini-3-pro-image-preview',
