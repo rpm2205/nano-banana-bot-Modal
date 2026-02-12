@@ -1,8 +1,5 @@
 import os
 import modal
-from aiogram import Bot
-from bot import dp, bot as local_bot
-from aiogram.types import Update
 
 # Определение образа контейнера
 image = (
@@ -35,6 +32,10 @@ async def telegram_webhook(request: dict):
     Modal автоматически выдаст HTTPS ссылку.
     """
     try:
+        from aiogram import Bot
+        from aiogram.types import Update
+        from bot import dp
+
         # Инициализируем бота ЗДЕСЬ, внутри функции, где есть секреты
         token = os.environ.get("TELEGRAM_BOT_TOKEN")
         if not token:
@@ -53,6 +54,8 @@ async def telegram_webhook(request: dict):
 @app.function(secrets=secrets)
 async def set_webhook(url: str):
     """Функция для ручной установки вебхука через `modal run`"""
+    from aiogram import Bot
+
     # Здесь тоже используем локальный инстанс, так как секреты доступны
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     temp_bot = Bot(token=token)
@@ -62,6 +65,8 @@ async def set_webhook(url: str):
 # Локальный запуск для тестов (polling)
 if __name__ == "__main__":
     import asyncio
+    from bot import dp, bot as local_bot
+
     # Для локального запуска используем bot из bot.py, который берет токен из локального env
     if local_bot:
         asyncio.run(dp.start_polling(local_bot))
