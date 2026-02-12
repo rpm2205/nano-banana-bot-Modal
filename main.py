@@ -18,7 +18,7 @@ image = (
 app = modal.App("nano-banana-bot", image=image)
 
 # Подключаем секреты (API ключи)
-secrets = [modal.Secret.from_name("nano-banana-secrets")]
+secrets = [modal.Secret.from_name("nano-banana-bot-secrets")]
 
 @app.function(secrets=secrets, keep_warm=1)
 @modal.web_endpoint(method="POST")
