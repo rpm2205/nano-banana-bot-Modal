@@ -312,7 +312,11 @@ async def handle_message(message: types.Message):
                 )
 
                 # Отправка
-                image_file = BufferedInputFile(result["image"], filename="result.jpg")
+                mime_type = (result.get("mime_type") or "image/jpeg").lower()
+                ext = "jpg" if "jpeg" in mime_type else "png" if "png" in mime_type else "jpg"
+                image_bytes = result["image"]
+                print(f"Generated image: mime={mime_type}, bytes={len(image_bytes)}")
+                image_file = BufferedInputFile(image_bytes, filename=f"result.{ext}")
                 await message.answer_photo(image_file, caption="Готово!", reply_markup=menus["result"])
                 
                 # Отправка промпта под спойлером

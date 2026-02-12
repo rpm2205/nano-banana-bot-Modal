@@ -73,7 +73,7 @@ async def generate_final_image(face_bytes: bytes, style_bytes: bytes, user_trait
         config=types.GenerateContentConfig(
             image_config=types.ImageConfig(
                 aspect_ratio=aspect_ratio,
-                image_size=image_size
+                image_size=image_size,
             )
         )
     )
@@ -81,11 +81,17 @@ async def generate_final_image(face_bytes: bytes, style_bytes: bytes, user_trait
     # Извлечение картинки
     if response.candidates and response.candidates[0].content.parts:
         for part in response.candidates[0].content.parts:
-            if part.inline_data:
-                # Декодируем base64 обратно в байты
-                image_data = base64.b64decode(part.inline_data.data)
+            if part.inline_data and part.inline_data.data:
+                raw_data = part.inline_data.data
+                # В разных версиях SDK data может быть raw bytes или base64-строкой.
+                if isinstance(raw_data, str):
+                    image_data = base64.b64decode(raw_data)
+                else:
+                    image_data = raw_data
+                mime_type = part.inline_data.mime_type or "image/jpeg"
                 return {
                     "image": image_data,
+                    "mime_type": mime_type,
                     "prompt": prompt_text
                 }
     
