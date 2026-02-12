@@ -9,19 +9,20 @@ image = (
     modal.Image.debian_slim()
     .pip_install(
         "aiogram>=3.0.0",
-        "google-genai", 
+        "google-genai",
         "requests",
         "pillow",
-        "fastapi[standard]"
+        "fastapi[standard]",
+    )
+    # Добавляем локальные файлы проекта в образ (без .venv, .git, node_modules)
+    .add_local_dir(
+        ".",
+        remote_path="/root",
+        ignore=[".venv", ".git", "node_modules", "__pycache__", ".DS_Store"],
     )
 )
 
-# Монтируем весь проект, чтобы в контейнере были bot.py, gemini.py, storage.py
-app = modal.App(
-    "nano-banana-bot",
-    image=image,
-    mounts=[modal.Mount.from_local_dir(".", remote_path="/root")]
-)
+app = modal.App("nano-banana-bot", image=image)
 
 # Подключаем секреты (API ключи)
 secrets = [modal.Secret.from_name("nano-banana-bot-secrets")]
