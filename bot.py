@@ -320,8 +320,12 @@ async def handle_message(message: types.Message):
                 image_file = BufferedInputFile(image_bytes, filename=f"result.{ext}")
                 await message.answer_photo(image_file, caption="Готово!", reply_markup=menus["result"])
                 
-                # Отправка промпта под спойлером
-                safe_prompt = result["prompt"][:1000].replace(".", "\\.").replace("-", "\\-").replace("!", "\\!")
+                # Отправка промпта под спойлером (без внутренней служебной строки про SUBJECT)
+                prompt_for_user = "\n".join(
+                    line for line in result["prompt"].splitlines()
+                    if "СУБЪЕКТ: человек с первого изображения." not in line
+                )
+                safe_prompt = prompt_for_user[:1000].replace(".", "\\.").replace("-", "\\-").replace("!", "\\!")
                 await message.answer(f"||{safe_prompt}||", parse_mode="MarkdownV2")
 
                 # Сохраняем состояние для "Повторить"
