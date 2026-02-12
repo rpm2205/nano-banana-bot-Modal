@@ -104,7 +104,7 @@ async def reply_with_profile(message: types.Message, user: dict):
 async def cmd_start(message: types.Message):
     user_id = message.from_user.id
     Storage.save_user(user_id, {"username": message.from_user.username})
-    Storage.set_session(user_id, "IDLE")
+    Storage.set_session(user_id, "IDLE", reset_data=True)
     await message.answer(
         "Привет! Я Nano Banana Bot 🍌.\n\nСоздавай фотореалистичные арты со своим лицом.\nНачни с настройки профиля!",
         reply_markup=menus["main"]
@@ -126,12 +126,12 @@ async def handle_message(message: types.Message):
 
     # Глобальная навигация
     if text in ["⬅️ Назад", "🏠 В главное меню"]:
-        Storage.set_session(user_id, "IDLE")
+        Storage.set_session(user_id, "IDLE", reset_data=True)
         await message.answer("Главное меню", reply_markup=menus["main"])
         return
 
     if text == "👤 Мой профиль":
-        Storage.set_session(user_id, "IDLE")
+        Storage.set_session(user_id, "IDLE", reset_data=True)
         await reply_with_profile(message, Storage.get_user(user_id))
         return
 
@@ -154,11 +154,11 @@ async def handle_message(message: types.Message):
             await message.answer("Выбери длину волос:", reply_markup=menus["hair_length"])
             return
         if text == "🖼 По референсу":
-            Storage.set_session(user_id, "GEN_REF_PROFILE_CHOICE")
+            Storage.set_session(user_id, "GEN_REF_PROFILE_CHOICE", reset_data=True)
             await message.answer("Использовать параметры из профиля?", reply_markup=menus["yes_no"])
             return
         if text == "✍️ По описанию":
-            Storage.set_session(user_id, "GEN_TEXT_PROFILE_CHOICE")
+            Storage.set_session(user_id, "GEN_TEXT_PROFILE_CHOICE", reset_data=True)
             await message.answer("Использовать параметры из профиля?", reply_markup=menus["yes_no"])
             return
         
@@ -264,7 +264,7 @@ async def handle_message(message: types.Message):
     # STATE: PARAMS & EXECUTE
     if "WAIT_PARAMS" in state:
         if text == "❌ Отмена":
-            Storage.set_session(user_id, "IDLE")
+            Storage.set_session(user_id, "IDLE", reset_data=True)
             await message.answer("Отмена", reply_markup=menus["main"])
             return
         
@@ -292,9 +292,10 @@ async def handle_message(message: types.Message):
                 
                 style_bytes = None
                 style_desc = ""
+                is_text_flow = "GEN_TEXT" in state
 
                 # Если есть референс
-                if data.get("refPhotoId"):
+                if (not is_text_flow) and data.get("refPhotoId"):
                     await message.bot.send_chat_action(chat_id=user_id, action="typing")
                     style_bytes = await download_file(message.bot, data["refPhotoId"])
                     style_desc = await analyze_style(style_bytes)
@@ -331,7 +332,7 @@ async def handle_message(message: types.Message):
 
             except Exception as e:
                 print(f"Gen Error: {e}")
-                Storage.set_session(user_id, "IDLE")
+                Storage.set_session(user_id, "IDLE", reset_data=True)
                 await message.answer(f"Ошибка: {str(e)}", reply_markup=menus["main"])
             return
 
@@ -345,6 +346,6 @@ async def handle_message(message: types.Message):
             await message.answer("Параметры:", reply_markup=get_params_keyboard(last["params"]))
             return
         
-        Storage.set_session(user_id, "IDLE")
+        Storage.set_session(user_id, "IDLE", reset_data=True)
         await message.answer("Меню", reply_markup=menus["main"])
         return

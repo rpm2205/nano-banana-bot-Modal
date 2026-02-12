@@ -1,5 +1,6 @@
 import modal
 import time
+from copy import deepcopy
 
 # Объявляем постоянные словари. 
 # create_if_missing=True создаст их при первом запуске.
@@ -24,11 +25,11 @@ class Storage:
         return sessions_db.get(user_id, {"state": "IDLE", "data": {}})
 
     @staticmethod
-    def set_session(user_id: int, state: str, data_updates: dict = None):
+    def set_session(user_id: int, state: str, data_updates: dict = None, reset_data: bool = False):
         current = sessions_db.get(user_id, {"state": "IDLE", "data": {}})
-        new_data = current["data"]
+        new_data = {} if reset_data else deepcopy(current.get("data", {}))
         if data_updates:
-            new_data.update(data_updates)
+            new_data.update(deepcopy(data_updates))
         
         sessions_db[user_id] = {
             "state": state,
