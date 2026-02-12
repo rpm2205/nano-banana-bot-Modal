@@ -13,9 +13,6 @@ async def analyze_style(image_bytes: bytes) -> str:
     """Анализирует стиль изображения для создания промпта."""
     try:
         client = get_client()
-        # Кодируем байты в base64 строку для API
-        b64_image = base64.b64encode(image_bytes).decode('utf-8')
-        
         prompt = "Analyze this image. Describe the ART STYLE, LIGHTING, COMPOSITION, and MOOD in a concise, descriptive paragraph. Do NOT describe the specific person."
         
         response = client.models.generate_content(
@@ -74,7 +71,7 @@ async def generate_final_image(face_bytes: bytes, style_bytes: bytes, user_trait
         model='gemini-3-pro-image-preview',
         contents=[types.Content(parts=parts)],
         config=types.GenerateContentConfig(
-            image_config=types.ImageGenerationConfig(
+            image_config=types.ImageConfig(
                 aspect_ratio=aspect_ratio,
                 image_size=image_size
             )
