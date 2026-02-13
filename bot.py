@@ -1,8 +1,17 @@
 import os
+import html
+import time
 import requests
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, BufferedInputFile
+from aiogram.types import (
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardRemove,
+    BufferedInputFile,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+)
 from storage import Storage
 from gemini import analyze_style, generate_final_image
 
@@ -67,10 +76,39 @@ menus = {
     ], resize_keyboard=True, one_time_keyboard=True),
 
     "result": ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="🔁 Повторить"), KeyboardButton(text="📋 Показать промпт")],
+        [KeyboardButton(text="🔁 Повторить")],
         [KeyboardButton(text="🏠 В главное меню")]
     ], resize_keyboard=True)
 }
+
+MAX_CAPTION_LEN = 1024
+download_cache = {}
+
+def _build_result_caption(prompt_text: str) -> str:
+    prompt_for_user = "\n".join(
+        line for line in (prompt_text or "").splitlines()
+        if "СУБЪЕКТ: человек с первого изображения." not in line
+    ).strip()
+    caption_prefix = "Готово!\n\nПромпт:\n"
+    allowed_prompt_len = max(0, MAX_CAPTION_LEN - len(caption_prefix))
+    truncated_prompt = prompt_for_user[:allowed_prompt_len]
+    escaped_prompt = html.escape(truncated_prompt or "-")
+    return f"Готово!\n\n<blockquote expandable>Промпт:\n{escaped_prompt}</blockquote>"
+
+def _quality_label(quality: str) -> str:
+    return (quality or "2K").replace("K", "К")
+
+def _get_download_keyboard(quality: str, generation_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"⬇️ Скачать файлом ({_quality_label(quality)})",
+                    callback_data=f"download_original:{generation_id}"
+                )
+            ]
+        ]
+    )
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 async def download_file(bot_instance: Bot, file_id: str) -> bytes:
@@ -318,15 +356,24 @@ async def handle_message(message: types.Message):
                 image_bytes = result["image"]
                 print(f"Generated image: mime={mime_type}, bytes={len(image_bytes)}")
                 image_file = BufferedInputFile(image_bytes, filename=f"result.{ext}")
-                await message.answer_photo(image_file, caption="Готово!", reply_markup=menus["result"])
-                
-                # Отправка промпта под спойлером (без внутренней служебной строки про SUBJECT)
-                prompt_for_user = "\n".join(
-                    line for line in result["prompt"].splitlines()
-                    if "СУБЪЕКТ: человек с первого изображения." not in line
+                quality = params.get("quality", "2K")
+                generation_id = f"{user_id}:{int(time.time() * 1000)}"
+                caption = _build_result_caption(result.get("prompt", ""))
+                await message.answer_photo(
+                    image_file,
+                    caption=caption,
+                    parse_mode="HTML",
+                    reply_markup=_get_download_keyboard(quality, generation_id)
                 )
-                safe_prompt = prompt_for_user[:1000].replace(".", "\\.").replace("-", "\\-").replace("!", "\\!")
-                await message.answer(f"||{safe_prompt}||", parse_mode="MarkdownV2")
+                await message.answer("Что дальше?", reply_markup=menus["result"])
+
+                # Кэшируем оригинал для скачивания файлом по кнопке.
+                download_cache[generation_id] = {
+                    "user_id": user_id,
+                    "image": image_bytes,
+                    "mime_type": mime_type,
+                    "quality": quality,
+                }
 
                 # Сохраняем состояние для "Повторить"
                 # В lastReq сохраняем все нужные данные
@@ -353,3 +400,28 @@ async def handle_message(message: types.Message):
         Storage.set_session(user_id, "IDLE", reset_data=True)
         await message.answer("Меню", reply_markup=menus["main"])
         return
+
+@dp.callback_query(F.data.startswith("download_original:"))
+async def download_original_callback(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    generation_id = callback.data.split(":", 1)[1] if callback.data else ""
+    cached = download_cache.get(generation_id)
+
+    if not cached or cached.get("user_id") != user_id:
+        await callback.answer("Оригинал недоступен. Сгенерируйте заново.", show_alert=True)
+        return
+
+    mime_type = (cached.get("mime_type") or "image/jpeg").lower()
+    ext = "jpg" if "jpeg" in mime_type else "png" if "png" in mime_type else "jpg"
+    quality = cached.get("quality", "2K")
+    image_bytes = cached["image"]
+
+    document = BufferedInputFile(image_bytes, filename=f"result_{quality}.{ext}")
+    await callback.message.answer_document(
+        document=document,
+        caption=f"Оригинал без сжатия ({_quality_label(quality)})"
+    )
+
+    # После отправки файла кнопка больше не нужна: файл уже в чате.
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.answer("Файл отправлен")
