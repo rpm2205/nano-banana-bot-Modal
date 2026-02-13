@@ -89,11 +89,11 @@ def _build_result_caption(prompt_text: str) -> str:
         line for line in (prompt_text or "").splitlines()
         if "СУБЪЕКТ: человек с первого изображения." not in line
     ).strip()
-    caption_prefix = "Готово!\n\nПромпт:\n"
+    caption_prefix = "Промпт:\n"
     allowed_prompt_len = max(0, MAX_CAPTION_LEN - len(caption_prefix))
     truncated_prompt = prompt_for_user[:allowed_prompt_len]
     escaped_prompt = html.escape(truncated_prompt or "-")
-    return f"Готово!\n\n<blockquote expandable>Промпт:\n{escaped_prompt}</blockquote>"
+    return f"<blockquote expandable>Промпт:\n{escaped_prompt}</blockquote>"
 
 def _quality_label(quality: str) -> str:
     return (quality or "2K").replace("K", "К")

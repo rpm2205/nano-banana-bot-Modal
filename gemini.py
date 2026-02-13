@@ -1,5 +1,6 @@
 import os
 import base64
+import json
 from google import genai
 from google.genai import types
 
@@ -9,6 +10,31 @@ def _truncate_text(value: str, limit: int = 240) -> str:
     if len(value) <= limit:
         return value
     return value[:limit] + "...<truncated>"
+
+def _bytes_signature(data: bytes) -> str:
+    if not data:
+        return "none"
+    head = data[:12]
+    return head.hex()
+
+def _guess_mime_by_magic(data: bytes) -> str:
+    if not data:
+        return "unknown"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):
+        return "image/gif"
+    if len(data) >= 12 and data[4:8] == b"ftyp":
+        return "image/heic_or_avif"
+    return "unknown"
+
+def _print_genai_call_log(tag: str, payload: dict) -> None:
+    try:
+        print(f"{tag}: {json.dumps(payload, ensure_ascii=False)}")
+    except Exception:
+        print(f"{tag}: {payload}")
 
 def get_client():
     api_key = os.environ.get("API_KEY")
@@ -26,6 +52,17 @@ async def analyze_style(image_bytes: bytes) -> str:
             "в котором будут отражены СТИЛЬ, ОСВЕЩЕНИЕ, КОМПОЗИЦИЯ и НАСТРОЕНИЕ сцены. "
             "Не описывай внешность конкретного человека. "
             "Ответ верни одной компактной связной формулировкой без списков и заголовков."
+        )
+
+        _print_genai_call_log(
+            "GenAI request analyze_style",
+            {
+                "model": "gemini-2.5-flash",
+                "image_bytes_len": len(image_bytes) if image_bytes else 0,
+                "image_magic_mime_guess": _guess_mime_by_magic(image_bytes),
+                "image_head_hex": _bytes_signature(image_bytes),
+                "prompt_preview": _truncate_text(prompt, 300),
+            }
         )
         
         response = client.models.generate_content(
@@ -79,6 +116,29 @@ async def generate_final_image(face_bytes: bytes, style_bytes: bytes, user_trait
         parts.append(types.Part.from_bytes(data=style_bytes, mime_type="image/jpeg"))
         
     parts.append(types.Part(text=prompt_text))
+
+    _print_genai_call_log(
+        "GenAI request generate_final_image",
+        {
+            "model": "gemini-3-pro-image-preview",
+            "config": {
+                "aspect_ratio": aspect_ratio,
+                "image_size": image_size,
+            },
+            "params": params or {},
+            "user_traits": user_traits or {},
+            "has_style_image": bool(style_bytes),
+            "face_bytes_len": len(face_bytes) if face_bytes else 0,
+            "face_magic_mime_guess": _guess_mime_by_magic(face_bytes),
+            "face_head_hex": _bytes_signature(face_bytes),
+            "style_bytes_len": len(style_bytes) if style_bytes else 0,
+            "style_magic_mime_guess": _guess_mime_by_magic(style_bytes) if style_bytes else "none",
+            "style_head_hex": _bytes_signature(style_bytes) if style_bytes else "none",
+            "style_desc_preview": _truncate_text(style_desc or "", 300),
+            "user_hints_preview": _truncate_text(user_hints or "", 300),
+            "prompt_preview": _truncate_text(prompt_text, 500),
+        }
+    )
 
     # Модель Gemini 3 Pro Image Preview
     response = client.models.generate_content(
