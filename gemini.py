@@ -4,6 +4,8 @@ import json
 from google import genai
 from google.genai import types
 
+FACE_LOCK_RULE = "ВАЖНО: не изменяй внешность человека, черты лица и узнаваемые индивидуальные особенности."
+
 def _truncate_text(value: str, limit: int = 240) -> str:
     if not value:
         return ""
@@ -35,6 +37,32 @@ def _print_genai_call_log(tag: str, payload: dict) -> None:
         print(f"{tag}: {json.dumps(payload, ensure_ascii=False)}")
     except Exception:
         print(f"{tag}: {payload}")
+
+def _normalize_user_prompt_text(value: str) -> str:
+    if not value:
+        return ""
+    lines = [line.strip() for line in value.splitlines() if line.strip()]
+    if lines and lines[0].lower() == "промпт:":
+        lines = lines[1:]
+    return "\n".join(lines).strip()
+
+def _looks_like_structured_prompt(value: str) -> bool:
+    text = (value or "").lower()
+    markers = ("сгенерируй", "глаза:", "волосы:", "стиль:", "детали:", "важно:")
+    return any(marker in text for marker in markers)
+
+def _ensure_face_lock_rule(prompt_text: str) -> str:
+    text = _normalize_user_prompt_text(prompt_text)
+    if not text:
+        return text
+    if FACE_LOCK_RULE.lower() in text.lower():
+        return text
+    lines = [line for line in text.splitlines() if line.strip()]
+    if not lines:
+        return FACE_LOCK_RULE
+    if len(lines) == 1:
+        return f"{lines[0]}\n{FACE_LOCK_RULE}"
+    return "\n".join([lines[0], FACE_LOCK_RULE, *lines[1:]])
 
 def get_client():
     api_key = os.environ.get("API_KEY")
@@ -90,22 +118,26 @@ async def generate_final_image(face_bytes: bytes, style_bytes: bytes, user_trait
     eyes = user_traits.get('eyes') or "естественные"
     hair_color = user_traits.get('hairColor') or "естественный"
     hair_length = user_traits.get('hairLength') or "естественная"
+    normalized_hints = _normalize_user_prompt_text(user_hints or "")
+    use_hints_as_prompt = _looks_like_structured_prompt(normalized_hints)
 
-    prompt_text = f"""
-    Сгенерируй фотореалистичное изображение.
-    СУБЪЕКТ: человек с первого изображения.
-    ВАЖНО: не изменяй внешность человека, черты лица и узнаваемые индивидуальные особенности.
-    ГЛАЗА: {eyes}. ВОЛОСЫ: {hair_color}, {hair_length}.
-    СТИЛЬ: {style_desc or 'сохранить естественный фотореализм'}.
-    ДЕТАЛИ: {user_hints or '-'}.
-    """
-
-    if not style_bytes:
+    if use_hints_as_prompt:
+        prompt_text = _ensure_face_lock_rule(normalized_hints)
+    elif style_bytes:
+        prompt_text = f"""
+        Сгенерируй фотореалистичное изображение.
+        СУБЪЕКТ: человек с первого изображения.
+        {FACE_LOCK_RULE}
+        ГЛАЗА: {eyes}. ВОЛОСЫ: {hair_color}, {hair_length}.
+        СТИЛЬ: {style_desc or 'сохранить естественный фотореализм'}.
+        ДЕТАЛИ: {normalized_hints or '-'}.
+        """
+    else:
         prompt_text = f"""
         Сгенерируй фотореалистичный портрет человека с предоставленного изображения.
-        ВАЖНО: не изменяй внешность человека, черты лица и узнаваемые индивидуальные особенности.
+        {FACE_LOCK_RULE}
         ГЛАЗА: {eyes}. ВОЛОСЫ: {hair_color}, {hair_length}.
-        ДЕТАЛИ: {user_hints or '-'}.
+        ДЕТАЛИ: {normalized_hints or '-'}.
         """
 
     parts = []
