@@ -120,6 +120,70 @@ async def download_file(bot_instance: Bot, file_id: str) -> bytes:
     response = requests.get(url)
     return response.content
 
+def _normalize_hints(raw_value: str) -> str:
+    value = (raw_value or "").strip()
+    return "" if value == "-" else value
+
+async def _run_generation(message: types.Message, user_id: int, req_data: dict):
+    params = req_data.get("params", {"ratio": "9:16", "quality": "2K"})
+    await message.answer("🍌 Генерирую...", reply_markup=ReplyKeyboardRemove())
+    Storage.set_session(user_id, "PROCESSING")
+
+    try:
+        face_bytes = await download_file(message.bot, req_data["userPhotoId"])
+
+        style_bytes = None
+        style_desc = req_data.get("styleDesc", "")
+        is_text_flow = not bool(req_data.get("refPhotoId"))
+
+        if (not is_text_flow) and req_data.get("refPhotoId"):
+            await message.bot.send_chat_action(chat_id=user_id, action="typing")
+            style_bytes = await download_file(message.bot, req_data["refPhotoId"])
+            if not style_desc:
+                style_desc = await analyze_style(style_bytes)
+
+        await message.bot.send_chat_action(chat_id=user_id, action="upload_photo")
+
+        result = await generate_final_image(
+            face_bytes=face_bytes,
+            style_bytes=style_bytes,
+            user_traits=req_data.get("userTraits", {}),
+            style_desc=style_desc,
+            user_hints=req_data.get("userHints"),
+            params=params
+        )
+
+        mime_type = (result.get("mime_type") or "image/jpeg").lower()
+        ext = "jpg" if "jpeg" in mime_type else "png" if "png" in mime_type else "jpg"
+        image_bytes = result["image"]
+        print(f"Generated image: mime={mime_type}, bytes={len(image_bytes)}")
+        image_file = BufferedInputFile(image_bytes, filename=f"result.{ext}")
+        quality = params.get("quality", "2K")
+        generation_id = f"{user_id}:{int(time.time() * 1000)}"
+        caption = _build_result_caption(result.get("prompt", ""))
+        await message.answer_photo(
+            image_file,
+            caption=caption,
+            parse_mode="HTML",
+            reply_markup=_get_download_keyboard(quality, generation_id)
+        )
+        await message.answer("Что дальше?", reply_markup=menus["result"])
+
+        download_cache[generation_id] = {
+            "user_id": user_id,
+            "image": image_bytes,
+            "mime_type": mime_type,
+            "quality": quality,
+        }
+
+        last_req = req_data.copy()
+        last_req["styleDesc"] = style_desc
+        Storage.set_session(user_id, "RESULT_VIEW", {"lastReq": last_req})
+    except Exception as e:
+        print(f"Gen Error: {e}")
+        Storage.set_session(user_id, "IDLE", reset_data=True)
+        await message.answer(f"Ошибка: {str(e)}", reply_markup=menus["main"])
+
 async def reply_with_profile(message: types.Message, user: dict):
     text = f"👤 *Ваш профиль:*\n\n"
     text += f"👀 Глаза: {user.get('eyes', 'Не указано')}\n"
@@ -152,6 +216,8 @@ async def cmd_start(message: types.Message):
 async def handle_message(message: types.Message):
     user_id = message.from_user.id
     text = message.text
+    caption = message.caption
+    user_input = (text if text is not None else caption) or ""
     photo = message.photo
     
     # Инициализация пользователя если нет
@@ -286,21 +352,39 @@ async def handle_message(message: types.Message):
         if not photo:
             await message.answer("Жду картинку.")
             return
-        Storage.set_session(user_id, "GEN_REF_WAIT_HINTS", {"refPhotoId": photo[-1].file_id})
-        await message.answer("Пожелания к результату? (или '-')", reply_markup=ReplyKeyboardRemove())
+        def_params = {"ratio": "9:16", "quality": "2K"}
+        inline_hints = _normalize_hints(caption)
+        Storage.set_session(
+            user_id,
+            "GEN_REF_WAIT_PARAMS",
+            {"refPhotoId": photo[-1].file_id, "userHints": inline_hints, "params": def_params}
+        )
+        await message.answer(
+            "Можешь добавить пожелания к результату текстом (по желанию) "
+            "или сразу нажать «🚀 Генерировать».",
+            reply_markup=get_params_keyboard(def_params)
+        )
         return
 
     if "WAIT_HINTS" in state:
-        hints = "" if text == "-" else text
+        hints = _normalize_hints(user_input)
         is_ref = "REF" in state
         next_state = "GEN_REF_WAIT_PARAMS" if is_ref else "GEN_TEXT_WAIT_PARAMS"
         def_params = {"ratio": "9:16", "quality": "2K"}
         Storage.set_session(user_id, next_state, {"userHints": hints, "params": def_params})
-        await message.answer("Параметры:", reply_markup=get_params_keyboard(def_params))
+        await message.answer(
+            "Добавь текстовые пожелания (по желанию) и выбери параметры. "
+            "Можно сразу нажать «🚀 Генерировать».",
+            reply_markup=get_params_keyboard(def_params)
+        )
         return
 
     # STATE: PARAMS & EXECUTE
     if "WAIT_PARAMS" in state:
+        if not text:
+            await message.answer("Используй кнопки параметров или отправь текстовые пожелания.", reply_markup=get_params_keyboard(data.get("params", {"ratio": "9:16", "quality": "2K"})))
+            return
+
         if text == "❌ Отмена":
             Storage.set_session(user_id, "IDLE", reset_data=True)
             await message.answer("Отмена", reply_markup=menus["main"])
@@ -320,81 +404,36 @@ async def handle_message(message: types.Message):
             await message.answer(f"Выбрано: {text}", reply_markup=get_params_keyboard(params))
             return
 
-        if text == "🚀 Генерировать":
-            await message.answer("🍌 Генерирую...", reply_markup=ReplyKeyboardRemove())
-            Storage.set_session(user_id, "PROCESSING")
-
-            try:
-                # Используем message.bot для скачивания, чтобы не зависеть от глобального bot
-                face_bytes = await download_file(message.bot, data["userPhotoId"])
-                
-                style_bytes = None
-                style_desc = ""
-                is_text_flow = "GEN_TEXT" in state
-
-                # Если есть референс
-                if (not is_text_flow) and data.get("refPhotoId"):
-                    await message.bot.send_chat_action(chat_id=user_id, action="typing")
-                    style_bytes = await download_file(message.bot, data["refPhotoId"])
-                    style_desc = await analyze_style(style_bytes)
-                
-                await message.bot.send_chat_action(chat_id=user_id, action="upload_photo")
-                
-                # Генерация
-                result = await generate_final_image(
-                    face_bytes=face_bytes,
-                    style_bytes=style_bytes,
-                    user_traits=data.get("userTraits", {}),
-                    style_desc=style_desc,
-                    user_hints=data.get("userHints"),
-                    params=params
-                )
-
-                # Отправка
-                mime_type = (result.get("mime_type") or "image/jpeg").lower()
-                ext = "jpg" if "jpeg" in mime_type else "png" if "png" in mime_type else "jpg"
-                image_bytes = result["image"]
-                print(f"Generated image: mime={mime_type}, bytes={len(image_bytes)}")
-                image_file = BufferedInputFile(image_bytes, filename=f"result.{ext}")
-                quality = params.get("quality", "2K")
-                generation_id = f"{user_id}:{int(time.time() * 1000)}"
-                caption = _build_result_caption(result.get("prompt", ""))
-                await message.answer_photo(
-                    image_file,
-                    caption=caption,
-                    parse_mode="HTML",
-                    reply_markup=_get_download_keyboard(quality, generation_id)
-                )
-                await message.answer("Что дальше?", reply_markup=menus["result"])
-
-                # Кэшируем оригинал для скачивания файлом по кнопке.
-                download_cache[generation_id] = {
-                    "user_id": user_id,
-                    "image": image_bytes,
-                    "mime_type": mime_type,
-                    "quality": quality,
-                }
-
-                # Сохраняем состояние для "Повторить"
-                # В lastReq сохраняем все нужные данные
-                last_req = data.copy()
-                last_req["styleDesc"] = style_desc # Кэшируем стиль, чтобы не анализировать снова
-                Storage.set_session(user_id, "RESULT_VIEW", {"lastReq": last_req})
-
-            except Exception as e:
-                print(f"Gen Error: {e}")
-                Storage.set_session(user_id, "IDLE", reset_data=True)
-                await message.answer(f"Ошибка: {str(e)}", reply_markup=menus["main"])
+        normalized_text = _normalize_hints(text)
+        if normalized_text:
+            Storage.set_session(user_id, state, {"userHints": normalized_text, "params": params})
+            await message.answer(
+                "Текстовые пожелания обновил. Можно нажимать «🚀 Генерировать».",
+                reply_markup=get_params_keyboard(params)
+            )
             return
+
+        if text == "🚀 Генерировать":
+            req_data = data.copy()
+            req_data["params"] = params
+            await _run_generation(message, user_id, req_data)
+            return
+
+        await message.answer(
+            "Можно отправить текстовые пожелания или выбрать параметры кнопками.",
+            reply_markup=get_params_keyboard(params)
+        )
+        return
 
     # STATE: RESULT
     if state == "RESULT_VIEW":
         if text == "🔁 Повторить":
             last = data.get("lastReq")
-            st = "GEN_REF_WAIT_PARAMS" if last.get("refPhotoId") else "GEN_TEXT_WAIT_PARAMS"
-            # Восстанавливаем данные
-            Storage.set_session(user_id, st, last)
-            await message.answer("Параметры:", reply_markup=get_params_keyboard(last["params"]))
+            if not last:
+                Storage.set_session(user_id, "IDLE", reset_data=True)
+                await message.answer("Не удалось восстановить прошлый запрос.", reply_markup=menus["main"])
+                return
+            await _run_generation(message, user_id, last)
             return
         
         Storage.set_session(user_id, "IDLE", reset_data=True)
