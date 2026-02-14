@@ -417,6 +417,12 @@ async def handle_message(message: types.Message):
             await message.answer(f"Выбрано: {text}", reply_markup=get_params_keyboard(params))
             return
 
+        if text == "🚀 Генерировать":
+            req_data = data.copy()
+            req_data["params"] = params
+            await _run_generation(message, user_id, req_data)
+            return
+
         normalized_text = _normalize_hints(text)
         if normalized_text and is_ref_params:
             Storage.set_session(user_id, state, {"userHints": normalized_text, "params": params})
@@ -424,18 +430,6 @@ async def handle_message(message: types.Message):
                 "Текстовые пожелания обновил. Можно нажимать «🚀 Генерировать».",
                 reply_markup=get_params_keyboard(params)
             )
-            return
-        if normalized_text and not is_ref_params:
-            await message.answer(
-                "Описание уже сохранено. Выбери параметры и нажми «🚀 Генерировать».",
-                reply_markup=get_params_keyboard(params)
-            )
-            return
-
-        if text == "🚀 Генерировать":
-            req_data = data.copy()
-            req_data["params"] = params
-            await _run_generation(message, user_id, req_data)
             return
 
         await message.answer(
