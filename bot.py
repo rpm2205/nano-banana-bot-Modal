@@ -371,7 +371,7 @@ async def handle_message(message: types.Message):
         if text and "Нет" in text:
             next_state = "GEN_REF_TEMP_PHOTO" if is_ref else "GEN_TEXT_TEMP_PHOTO"
             Storage.set_session(user_id, next_state, {"useProfile": False})
-            await message.answer("Отправь свое фото для этой генерации.")
+            await message.answer("Отправь фото (селфи) для этой генерации.")
             return
 
     # STATE: TEMP DATA COLLECTION
