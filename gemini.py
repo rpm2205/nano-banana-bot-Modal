@@ -109,7 +109,7 @@ async def analyze_style(image_bytes: bytes) -> str:
         print(f"Style Analysis Error: {e}")
         return "Кинематографичное освещение, фотореалистичный стиль, высокая детализация."
 
-async def generate_final_image(face_bytes: bytes, style_bytes: bytes, user_traits: dict, style_desc: str, user_hints: str, params: dict):
+async def generate_final_image(face_bytes: bytes, style_bytes: bytes | None, user_traits: dict, style_desc: str, user_hints: str, params: dict):
     """Генерирует финальное изображение."""
     client = get_client()
 
@@ -120,10 +120,11 @@ async def generate_final_image(face_bytes: bytes, style_bytes: bytes, user_trait
     hair_length = user_traits.get('hairLength') or "естественная"
     normalized_hints = _normalize_user_prompt_text(user_hints or "")
     use_hints_as_prompt = _looks_like_structured_prompt(normalized_hints)
+    has_style_description = bool((style_desc or "").strip())
 
     if use_hints_as_prompt:
         prompt_text = _ensure_face_lock_rule(normalized_hints)
-    elif style_bytes:
+    elif has_style_description:
         prompt_text = f"""
         Сгенерируй фотореалистичное изображение.
         СУБЪЕКТ: человек с первого изображения.

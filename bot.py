@@ -178,7 +178,8 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
 
         result = await generate_final_image(
             face_bytes=face_bytes,
-            style_bytes=style_bytes,
+            # В Pro отправляем только фото лица; референс используется только для style-анализa (Flash 2.5).
+            style_bytes=None,
             user_traits=req_data.get("userTraits", {}),
             style_desc=style_desc,
             user_hints=req_data.get("userHints"),
