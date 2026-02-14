@@ -304,15 +304,15 @@ async def handle_message(message: types.Message):
             return
         if text == "👀 Цвет глаз":
             Storage.set_session(user_id, "PROFILE_EDIT_EYES")
-            await message.answer("Выбери цвет глаз:", reply_markup=menus["eyes"])
+            await message.answer("Выбери цвет глаз или напиши свой вариант:", reply_markup=menus["eyes"])
             return
         if text == "💇‍♀️ Цвет волос":
             Storage.set_session(user_id, "PROFILE_EDIT_HAIR_COLOR")
-            await message.answer("Выбери цвет волос:", reply_markup=menus["hair_color"])
+            await message.answer("Выбери цвет волос или напиши свой вариант:", reply_markup=menus["hair_color"])
             return
         if text == "📏 Длина волос":
             Storage.set_session(user_id, "PROFILE_EDIT_HAIR_LENGTH")
-            await message.answer("Выбери длину волос:", reply_markup=menus["hair_length"])
+            await message.answer("Выбери длину волос или напиши свой вариант:", reply_markup=menus["hair_length"])
             return
         if text == "🖼 По референсу":
             Storage.set_session(user_id, "GEN_REF_PROFILE_CHOICE", reset_data=True)
@@ -383,7 +383,7 @@ async def handle_message(message: types.Message):
         is_ref = "REF" in state
         next_state = "GEN_REF_TEMP_EYES" if is_ref else "GEN_TEXT_TEMP_EYES"
         Storage.set_session(user_id, next_state, {"userPhotoId": photo[-1].file_id})
-        await message.answer("Цвет глаз?", reply_markup=menus["eyes"])
+        await message.answer("Цвет глаз? Выбери вариант или напиши свой.", reply_markup=menus["eyes"])
         return
 
     if "_TEMP_EYES" in state:
@@ -392,7 +392,7 @@ async def handle_message(message: types.Message):
         traits["eyes"] = text
         next_state = "GEN_REF_TEMP_HAIR" if is_ref else "GEN_TEXT_TEMP_HAIR"
         Storage.set_session(user_id, next_state, {"userTraits": traits})
-        await message.answer("Цвет волос?", reply_markup=menus["hair_color"])
+        await message.answer("Цвет волос? Выбери вариант или напиши свой.", reply_markup=menus["hair_color"])
         return
 
     if "_TEMP_HAIR" in state:
