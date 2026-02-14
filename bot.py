@@ -1,6 +1,7 @@
 import os
 import html
 import time
+import asyncio
 import requests
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
@@ -83,6 +84,16 @@ menus = {
 
 MAX_CAPTION_LEN = 1024
 download_cache = {}
+TRANSIENT_NETWORK_MARKERS = (
+    "ClientOSError",
+    "Connection reset by peer",
+    "Connection lost",
+    "ServerDisconnectedError",
+    "TimeoutError",
+    "ClientConnectorError",
+    "Network is unreachable",
+    "Temporary failure in name resolution",
+)
 
 def _build_result_caption(prompt_text: str) -> str:
     prompt_for_user = "\n".join(
@@ -119,6 +130,27 @@ async def download_file(bot_instance: Bot, file_id: str) -> bytes:
     url = f"https://api.telegram.org/file/bot{bot_instance.token}/{file_path}"
     response = requests.get(url)
     return response.content
+
+def _is_transient_network_error(exc: Exception) -> bool:
+    text = str(exc)
+    return any(marker in text for marker in TRANSIENT_NETWORK_MARKERS)
+
+async def _retry_telegram_call(label: str, call_factory, attempts: int = 4, base_delay: float = 0.8):
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return await call_factory()
+        except Exception as e:
+            last_error = e
+            if not _is_transient_network_error(e) or attempt == attempts:
+                raise
+            delay = round(base_delay * attempt, 2)
+            print(
+                f"Telegram transient error on {label}, "
+                f"attempt={attempt}/{attempts}, retry_in={delay}s, error={e}"
+            )
+            await asyncio.sleep(delay)
+    raise last_error
 
 def _normalize_hints(raw_value: str) -> str:
     value = (raw_value or "").strip()
@@ -161,14 +193,6 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
         quality = params.get("quality", "2K")
         generation_id = f"{user_id}:{int(time.time() * 1000)}"
         caption = _build_result_caption(result.get("prompt", ""))
-        await message.answer_photo(
-            image_file,
-            caption=caption,
-            parse_mode="HTML",
-            reply_markup=_get_download_keyboard(quality, generation_id)
-        )
-        await message.answer("Что дальше?", reply_markup=menus["result"])
-
         download_cache[generation_id] = {
             "user_id": user_id,
             "image": image_bytes,
@@ -176,13 +200,45 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
             "quality": quality,
         }
 
+        try:
+            await _retry_telegram_call(
+                "answer_photo(result)",
+                lambda: message.answer_photo(
+                    BufferedInputFile(image_bytes, filename=f"result.{ext}"),
+                    caption=caption,
+                    parse_mode="HTML",
+                    reply_markup=_get_download_keyboard(quality, generation_id),
+                ),
+            )
+        except Exception as photo_error:
+            print(f"Photo send failed, fallback to document: {photo_error}")
+            await _retry_telegram_call(
+                "answer_document(result_fallback)",
+                lambda: message.answer_document(
+                    BufferedInputFile(image_bytes, filename=f"result_{quality}.{ext}"),
+                    caption=f"Готово. Фото отправляю как файл из-за сетевой ошибки ({_quality_label(quality)}).",
+                    reply_markup=_get_download_keyboard(quality, generation_id),
+                ),
+            )
+
+        await _retry_telegram_call(
+            "answer(next_step)",
+            lambda: message.answer("Что дальше?", reply_markup=menus["result"]),
+        )
+
         last_req = req_data.copy()
         last_req["styleDesc"] = style_desc
         Storage.set_session(user_id, "RESULT_VIEW", {"lastReq": last_req})
     except Exception as e:
         print(f"Gen Error: {e}")
         Storage.set_session(user_id, "IDLE", reset_data=True)
-        await message.answer(f"Ошибка: {str(e)}", reply_markup=menus["main"])
+        try:
+            await _retry_telegram_call(
+                "answer(error_message)",
+                lambda: message.answer(f"Ошибка: {str(e)}", reply_markup=menus["main"]),
+            )
+        except Exception as send_error:
+            print(f"Failed to deliver error message to user: {send_error}")
 
 async def reply_with_profile(message: types.Message, user: dict):
     text = f"👤 *Ваш профиль:*\n\n"
