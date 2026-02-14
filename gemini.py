@@ -48,7 +48,7 @@ def _normalize_user_prompt_text(value: str) -> str:
 
 def _looks_like_structured_prompt(value: str) -> bool:
     text = (value or "").lower()
-    markers = ("сгенерируй", "глаза:", "волосы:", "стиль:", "детали:", "важно:")
+    markers = ("сгенерируй", "глаза:", "волосы:", "стиль:", "детали:", "дополнения:", "важно:")
     return any(marker in text for marker in markers)
 
 def _ensure_face_lock_rule(prompt_text: str) -> str:
@@ -130,14 +130,14 @@ async def generate_final_image(face_bytes: bytes, style_bytes: bytes, user_trait
         {FACE_LOCK_RULE}
         ГЛАЗА: {eyes}. ВОЛОСЫ: {hair_color}, {hair_length}.
         СТИЛЬ: {style_desc or 'сохранить естественный фотореализм'}.
-        ДЕТАЛИ: {normalized_hints or '-'}.
+        ДОПОЛНЕНИЯ: {normalized_hints or '-'}.
         """
     else:
         prompt_text = f"""
         Сгенерируй фотореалистичный портрет человека с предоставленного изображения.
         {FACE_LOCK_RULE}
         ГЛАЗА: {eyes}. ВОЛОСЫ: {hair_color}, {hair_length}.
-        ДЕТАЛИ: {normalized_hints or '-'}.
+        ДОПОЛНЕНИЯ: {normalized_hints or '-'}.
         """
 
     parts = []
