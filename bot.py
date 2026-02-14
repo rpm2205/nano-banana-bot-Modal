@@ -381,9 +381,18 @@ async def handle_message(message: types.Message):
             await message.answer("Нужно фото.")
             return
         is_ref = "REF" in state
-        next_state = "GEN_REF_TEMP_EYES" if is_ref else "GEN_TEXT_TEMP_EYES"
-        Storage.set_session(user_id, next_state, {"userPhotoId": photo[-1].file_id})
-        await message.answer("Цвет глаз? Выбери вариант или напиши свой.", reply_markup=menus["eyes"])
+        if is_ref:
+            next_state = "GEN_REF_TEMP_EYES"
+            Storage.set_session(user_id, next_state, {"userPhotoId": photo[-1].file_id})
+            await message.answer("Цвет глаз? Выбери вариант или напиши свой.", reply_markup=menus["eyes"])
+            return
+
+        # Временно отключено для GEN_TEXT: вопросы про цвет глаз/волос.
+        # next_state = "GEN_TEXT_TEMP_EYES"
+        # Storage.set_session(user_id, next_state, {"userPhotoId": photo[-1].file_id})
+        # await message.answer("Цвет глаз? Выбери вариант или напиши свой.", reply_markup=menus["eyes"])
+        Storage.set_session(user_id, "GEN_TEXT_WAIT_HINTS", {"userPhotoId": photo[-1].file_id})
+        await message.answer("Опиши идею, пожелания к результату. Или вставь готовый промпт.", reply_markup=ReplyKeyboardRemove())
         return
 
     if "_TEMP_EYES" in state:
@@ -401,7 +410,7 @@ async def handle_message(message: types.Message):
         traits["hairColor"] = text
         next_state = "GEN_REF_WAIT_IMAGE" if is_ref else "GEN_TEXT_WAIT_HINTS"
         Storage.set_session(user_id, next_state, {"userTraits": traits})
-        await message.answer("Теперь референс." if is_ref else "Опиши идею.", reply_markup=ReplyKeyboardRemove())
+        await message.answer("Теперь референс." if is_ref else "Опиши идею, пожелания к результату. Или вставь готовый промпт.", reply_markup=ReplyKeyboardRemove())
         return
 
     # STATE: REF IMAGE & HINTS
