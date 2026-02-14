@@ -2,6 +2,7 @@ import os
 import html
 import time
 import asyncio
+import json
 import requests
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
@@ -156,6 +157,28 @@ def _normalize_hints(raw_value: str) -> str:
     value = (raw_value or "").strip()
     return "" if value == "-" else value
 
+def _truncate(value: str, limit: int = 120) -> str:
+    if not value:
+        return ""
+    return value if len(value) <= limit else value[:limit] + "...<truncated>"
+
+def _log_message_step(user_id: int, state: str, text: str, caption: str, has_photo: bool) -> None:
+    payload = {
+        "user_id": user_id,
+        "state": state,
+        "text": _truncate(text or ""),
+        "caption": _truncate(caption or ""),
+        "has_photo": bool(has_photo),
+    }
+    print(f"Bot message step: {json.dumps(payload, ensure_ascii=False)}")
+
+def _log_callback_step(user_id: int, data: str) -> None:
+    payload = {
+        "user_id": user_id,
+        "callback_data": _truncate(data or ""),
+    }
+    print(f"Bot callback step: {json.dumps(payload, ensure_ascii=False)}")
+
 async def _run_generation(message: types.Message, user_id: int, req_data: dict):
     params = req_data.get("params", {"ratio": "9:16", "quality": "2K"})
     await message.answer("🍌 Генерирую...", reply_markup=ReplyKeyboardRemove())
@@ -284,6 +307,7 @@ async def handle_message(message: types.Message):
     session = Storage.get_session(user_id)
     state = session["state"]
     data = session["data"]
+    _log_message_step(user_id, state, text, caption, bool(photo))
 
     # Глобальная навигация
     if text in ["⬅️ Назад", "🏠 В главное меню"]:
@@ -524,6 +548,7 @@ async def handle_message(message: types.Message):
 @dp.callback_query(F.data.startswith("download_original:"))
 async def download_original_callback(callback: types.CallbackQuery):
     user_id = callback.from_user.id
+    _log_callback_step(user_id, callback.data or "")
     generation_id = callback.data.split(":", 1)[1] if callback.data else ""
     cached = download_cache.get(generation_id)
 
