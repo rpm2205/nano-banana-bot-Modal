@@ -372,17 +372,30 @@ async def handle_message(message: types.Message):
         next_state = "GEN_REF_WAIT_PARAMS" if is_ref else "GEN_TEXT_WAIT_PARAMS"
         def_params = {"ratio": "9:16", "quality": "2K"}
         Storage.set_session(user_id, next_state, {"userHints": hints, "params": def_params})
-        await message.answer(
-            "Добавь текстовые пожелания (по желанию) и выбери параметры. "
-            "Можно сразу нажать «🚀 Генерировать».",
-            reply_markup=get_params_keyboard(def_params)
-        )
+        if is_ref:
+            await message.answer(
+                "Добавь текстовые пожелания (по желанию) и выбери параметры. "
+                "Можно сразу нажать «🚀 Генерировать».",
+                reply_markup=get_params_keyboard(def_params)
+            )
+        else:
+            await message.answer(
+                "Выбери параметры и нажми «🚀 Генерировать».",
+                reply_markup=get_params_keyboard(def_params)
+            )
         return
 
     # STATE: PARAMS & EXECUTE
     if "WAIT_PARAMS" in state:
+        is_ref_params = "GEN_REF" in state
+
         if not text:
-            await message.answer("Используй кнопки параметров или отправь текстовые пожелания.", reply_markup=get_params_keyboard(data.get("params", {"ratio": "9:16", "quality": "2K"})))
+            await message.answer(
+                "Используй кнопки параметров."
+                if not is_ref_params
+                else "Используй кнопки параметров или отправь текстовые пожелания.",
+                reply_markup=get_params_keyboard(data.get("params", {"ratio": "9:16", "quality": "2K"}))
+            )
             return
 
         if text == "❌ Отмена":
@@ -405,10 +418,16 @@ async def handle_message(message: types.Message):
             return
 
         normalized_text = _normalize_hints(text)
-        if normalized_text:
+        if normalized_text and is_ref_params:
             Storage.set_session(user_id, state, {"userHints": normalized_text, "params": params})
             await message.answer(
                 "Текстовые пожелания обновил. Можно нажимать «🚀 Генерировать».",
+                reply_markup=get_params_keyboard(params)
+            )
+            return
+        if normalized_text and not is_ref_params:
+            await message.answer(
+                "Описание уже сохранено. Выбери параметры и нажми «🚀 Генерировать».",
                 reply_markup=get_params_keyboard(params)
             )
             return
@@ -420,7 +439,9 @@ async def handle_message(message: types.Message):
             return
 
         await message.answer(
-            "Можно отправить текстовые пожелания или выбрать параметры кнопками.",
+            "Можно отправить текстовые пожелания или выбрать параметры кнопками."
+            if is_ref_params
+            else "Выбери параметры кнопками и нажми «🚀 Генерировать».",
             reply_markup=get_params_keyboard(params)
         )
         return
