@@ -62,7 +62,7 @@ menus = {
     "eyes": ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="Голубые"), KeyboardButton(text="Зеленые")],
         [KeyboardButton(text="Карие"), KeyboardButton(text="Серые")],
-        [KeyboardButton(text="Черные"), KeyboardButton(text="Разные")]
+        [KeyboardButton(text="Черные"), KeyboardButton(text="Ореховые")]
     ], resize_keyboard=True, one_time_keyboard=True),
     
     "hair_color": ReplyKeyboardMarkup(keyboard=[
