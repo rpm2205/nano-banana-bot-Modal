@@ -255,11 +255,23 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
         Storage.set_session(user_id, "RESULT_VIEW", {"lastReq": last_req})
     except Exception as e:
         print(f"Gen Error: {e}")
+        # Возвращаем пользователя в безопасное состояние.
+        # reset_data оставляем, чтобы не залипнуть в промежуточных состояниях,
+        # но сообщение делаем более дружелюбным, особенно для внутренних 500 от модели.
         Storage.set_session(user_id, "IDLE", reset_data=True)
+
+        # Базовое, «человеческое» сообщение об ошибке генерации.
+        user_message = (
+            "Сервис генерации сейчас дал внутреннюю ошибку. "
+            "Попробуй, пожалуйста, ещё раз через несколько секунд."
+            if "INTERNAL" in str(e) or "500" in str(e)
+            else f"Ошибка генерации: {str(e)}"
+        )
+
         try:
             await _retry_telegram_call(
                 "answer(error_message)",
-                lambda: message.answer(f"Ошибка: {str(e)}", reply_markup=menus["main"]),
+                lambda: message.answer(user_message, reply_markup=menus["main"]),
             )
         except Exception as send_error:
             print(f"Failed to deliver error message to user: {send_error}")

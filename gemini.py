@@ -1,6 +1,7 @@
 import os
 import base64
 import json
+import asyncio
 from google import genai
 from google.genai import types
 
@@ -63,6 +64,18 @@ def _ensure_face_lock_rule(prompt_text: str) -> str:
     if len(lines) == 1:
         return f"{lines[0]}\n{FACE_LOCK_RULE}"
     return "\n".join([lines[0], FACE_LOCK_RULE, *lines[1:]])
+
+
+def _is_transient_genai_error(exc: Exception) -> bool:
+    """
+    Эвристика для определения «временных» ошибок GenAI,
+    которые имеет смысл повторить (например, 500 INTERNAL).
+    """
+    text = str(exc)
+    if "INTERNAL" in text or "'code': 500" in text or '"code": 500' in text:
+        return True
+    # При необходимости сюда можно добавить другие маркеры.
+    return False
 
 def get_client():
     api_key = os.environ.get("API_KEY")
@@ -173,17 +186,42 @@ async def generate_final_image(face_bytes: bytes, style_bytes: bytes | None, use
         }
     )
 
-    # Модель Gemini 3 Pro Image Preview
-    response = client.models.generate_content(
-        model='gemini-3-pro-image-preview',
-        contents=[types.Content(parts=parts)],
-        config=types.GenerateContentConfig(
-            image_config=types.ImageConfig(
-                aspect_ratio=aspect_ratio,
-                image_size=image_size,
+    # Модель Gemini 3 Pro Image Preview.
+    # Добавляем простейший ретрай для временных внутренних ошибок (например, 500 INTERNAL),
+    # чтобы пользователь с большей вероятностью получал результат в рамках одного сценария.
+    last_error: Exception | None = None
+    max_attempts = 3
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = client.models.generate_content(
+                model='gemini-3-pro-image-preview',
+                contents=[types.Content(parts=parts)],
+                config=types.GenerateContentConfig(
+                    image_config=types.ImageConfig(
+                        aspect_ratio=aspect_ratio,
+                        image_size=image_size,
+                    )
+                )
             )
-        )
-    )
+            # Если вызов успешный — выходим из цикла и разбираем ответ ниже.
+            break
+        except Exception as e:
+            last_error = e
+            if not _is_transient_genai_error(e) or attempt == max_attempts:
+                # Нетрaнзитная ошибка или исчерпали попытки — пробрасываем дальше.
+                raise
+            delay = 1.5 * attempt
+            print(
+                f"GenAI transient error on generate_final_image, "
+                f"attempt={attempt}/{max_attempts}, retry_in={delay:.2f}s, error={e}"
+            )
+            await asyncio.sleep(delay)
+    else:
+        # Теоретически недостижимо, но на всякий случай.
+        if last_error:
+            raise last_error
+        raise Exception("Unknown error in generate_final_image retry loop")
 
     # Извлечение картинки из любого candidate/part.
     candidates = response.candidates or []
