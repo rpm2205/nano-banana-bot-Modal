@@ -78,15 +78,23 @@ def _is_transient_genai_error(exc: Exception) -> bool:
     return False
 
 def get_client():
+    """Получает клиент для модели Pro (gemini-3-pro-image-preview)."""
     api_key = os.environ.get("API_KEY")
     if not api_key:
         raise ValueError("API_KEY not found in environment variables")
     return genai.Client(api_key=api_key)
 
+def get_flash_client():
+    """Получает клиент для модели Flash (gemini-2.5-flash)."""
+    api_key = os.environ.get("GEMINI_FLASH_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_FLASH_API_KEY not found in environment variables")
+    return genai.Client(api_key=api_key)
+
 async def analyze_style(image_bytes: bytes) -> str:
     """Анализирует стиль изображения для создания промпта."""
     try:
-        client = get_client()
+        client = get_flash_client()
         prompt = (
             "Проанализируй это изображение-референс. "
             "Сформируй на русском языке готовый промпт для генерации изображения в Nano Banana, "
