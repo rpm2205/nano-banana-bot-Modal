@@ -20,7 +20,7 @@ jobs:
           cache: 'pip'
       
       - name: Install Modal
-        run: pip install modal
+        run: pip install -r requirements.txt
       
       - name: Deploy to Modal
         env:
