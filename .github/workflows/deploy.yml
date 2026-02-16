@@ -15,8 +15,6 @@ jobs:
       
       - name: Verify project files
         run: |
-          echo "📁 Checking project structure..."
-          ls -la
           if [ ! -f "main.py" ]; then
             echo "❌ Error: main.py not found"
             exit 1
@@ -25,7 +23,6 @@ jobs:
             echo "❌ Error: requirements.txt not found"
             exit 1
           fi
-          echo "✅ Project files verified"
       
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -34,9 +31,7 @@ jobs:
           cache: 'pip'
       
       - name: Install Modal
-        run: |
-          pip install -r requirements.txt
-          modal --version
+        run: pip install -r requirements.txt
       
       - name: Verify Modal authentication
         env:
@@ -47,45 +42,14 @@ jobs:
             echo "❌ Error: MODAL_TOKEN_ID or MODAL_TOKEN_SECRET is not set"
             exit 1
           fi
-          
-          # Remove any whitespace from tokens
-          MODAL_TOKEN_ID=$(echo "$MODAL_TOKEN_ID" | tr -d '[:space:]')
-          MODAL_TOKEN_SECRET=$(echo "$MODAL_TOKEN_SECRET" | tr -d '[:space:]')
-          
-          # Check token format (Modal tokens usually start with specific prefixes)
-          if [ ${#MODAL_TOKEN_ID} -lt 10 ] || [ ${#MODAL_TOKEN_SECRET} -lt 10 ]; then
-            echo "❌ Error: Token appears to be too short or malformed"
-            echo "Token ID length: ${#MODAL_TOKEN_ID}"
-            echo "Token Secret length: ${#MODAL_TOKEN_SECRET}"
-            echo "Please check that tokens were copied correctly without extra spaces"
-            exit 1
-          fi
-          
-          echo "✅ Modal tokens are set"
-          echo "Token ID length: ${#MODAL_TOKEN_ID} characters"
-          echo "Token Secret length: ${#MODAL_TOKEN_SECRET} characters"
-          echo "Testing Modal connection..."
-          modal app list || echo "⚠️  Note: app list may fail if no apps exist, but this is OK"
       
       - name: Deploy to Modal
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
         run: |
-          echo "🚀 Starting deployment..."
-          echo "Working directory: $(pwd)"
-          echo "Python version: $(python --version)"
-          echo "Modal version: $(modal --version)"
-          
-          # Clean tokens from any whitespace
+          # Clean tokens from any whitespace (prevents "Token ID is malformed" errors)
           export MODAL_TOKEN_ID=$(echo "$MODAL_TOKEN_ID" | tr -d '[:space:]')
           export MODAL_TOKEN_SECRET=$(echo "$MODAL_TOKEN_SECRET" | tr -d '[:space:]')
           
-          set -x  # Enable command tracing
-          modal deploy main.py || {
-            echo "❌ Deployment failed with exit code $?"
-            echo "💡 Tip: Check that MODAL_TOKEN_ID and MODAL_TOKEN_SECRET are correctly set in GitHub Secrets"
-            echo "💡 Tip: Make sure tokens don't have extra spaces at the beginning or end"
-            exit 1
-          }
-          echo "✅ Deployment completed successfully"
+          modal deploy main.py
