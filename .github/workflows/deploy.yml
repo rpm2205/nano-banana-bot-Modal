@@ -13,6 +13,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
+      - name: Verify project files
+        run: |
+          echo "📁 Checking project structure..."
+          ls -la
+          if [ ! -f "main.py" ]; then
+            echo "❌ Error: main.py not found"
+            exit 1
+          fi
+          if [ ! -f "requirements.txt" ]; then
+            echo "❌ Error: requirements.txt not found"
+            exit 1
+          fi
+          echo "✅ Project files verified"
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -20,10 +34,35 @@ jobs:
           cache: 'pip'
       
       - name: Install Modal
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          modal --version
+      
+      - name: Verify Modal authentication
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: |
+          if [ -z "$MODAL_TOKEN_ID" ] || [ -z "$MODAL_TOKEN_SECRET" ]; then
+            echo "❌ Error: MODAL_TOKEN_ID or MODAL_TOKEN_SECRET is not set"
+            exit 1
+          fi
+          echo "✅ Modal tokens are set"
+          echo "Testing Modal connection..."
+          modal app list || echo "⚠️  Note: app list may fail if no apps exist, but this is OK"
       
       - name: Deploy to Modal
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-        run: modal deploy main.py
+        run: |
+          echo "🚀 Starting deployment..."
+          echo "Working directory: $(pwd)"
+          echo "Python version: $(python --version)"
+          echo "Modal version: $(modal --version)"
+          set -x  # Enable command tracing
+          modal deploy main.py || {
+            echo "❌ Deployment failed with exit code $?"
+            exit 1
+          }
+          echo "✅ Deployment completed successfully"
