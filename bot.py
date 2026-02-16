@@ -182,7 +182,7 @@ def _log_callback_step(user_id: int, data: str) -> None:
 async def _run_generation(message: types.Message, user_id: int, req_data: dict):
     params = req_data.get("params", {"ratio": "9:16", "quality": "2K"})
     await message.answer("🍌 Генерирую...", reply_markup=ReplyKeyboardRemove())
-    Storage.set_session(user_id, "PROCESSING")
+    await Storage.set_session(user_id, "PROCESSING")
 
     try:
         face_bytes = await download_file(message.bot, req_data["userPhotoId"])
@@ -252,13 +252,13 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
 
         last_req = req_data.copy()
         last_req["styleDesc"] = style_desc
-        Storage.set_session(user_id, "RESULT_VIEW", {"lastReq": last_req})
+        await Storage.set_session(user_id, "RESULT_VIEW", {"lastReq": last_req})
     except Exception as e:
         print(f"Gen Error: {e}")
         # Возвращаем пользователя в безопасное состояние.
         # reset_data оставляем, чтобы не залипнуть в промежуточных состояниях,
         # но сообщение делаем более дружелюбным, особенно для внутренних 500 от модели.
-        Storage.set_session(user_id, "IDLE", reset_data=True)
+        await Storage.set_session(user_id, "IDLE", reset_data=True)
 
         # Базовое, «человеческое» сообщение об ошибке генерации.
         user_message = (
@@ -297,8 +297,8 @@ async def reply_with_profile(message: types.Message, user: dict):
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
     user_id = message.from_user.id
-    Storage.save_user(user_id, {"username": message.from_user.username})
-    Storage.set_session(user_id, "IDLE", reset_data=True)
+    await Storage.save_user(user_id, {"username": message.from_user.username})
+    await Storage.set_session(user_id, "IDLE", reset_data=True)
     await message.answer(
         "Привет! Я Nano Banana Bot 🍌.\n\nСоздавай фотореалистичные арты со своим лицом.\nНачни с настройки профиля!",
         reply_markup=menus["main"]
@@ -313,49 +313,49 @@ async def handle_message(message: types.Message):
     photo = message.photo
     
     # Инициализация пользователя если нет
-    if not Storage.get_user(user_id):
-        Storage.save_user(user_id, {"username": message.from_user.username})
+    if not await Storage.get_user(user_id):
+        await Storage.save_user(user_id, {"username": message.from_user.username})
     
-    session = Storage.get_session(user_id)
+    session = await Storage.get_session(user_id)
     state = session["state"]
     data = session["data"]
     _log_message_step(user_id, state, text, caption, bool(photo))
 
     # Глобальная навигация
     if text in ["⬅️ Назад", "🏠 В главное меню"]:
-        Storage.set_session(user_id, "IDLE", reset_data=True)
+        await Storage.set_session(user_id, "IDLE", reset_data=True)
         await message.answer("Главное меню", reply_markup=menus["main"])
         return
 
     if text == "👤 Мой профиль":
-        Storage.set_session(user_id, "IDLE", reset_data=True)
-        await reply_with_profile(message, Storage.get_user(user_id))
+        await Storage.set_session(user_id, "IDLE", reset_data=True)
+        await reply_with_profile(message, await Storage.get_user(user_id))
         return
 
     # STATE: IDLE
     if state == "IDLE":
         if text == "📸 Загрузить/Обновить фото":
-            Storage.set_session(user_id, "PROFILE_EDIT_PHOTO")
+            await Storage.set_session(user_id, "PROFILE_EDIT_PHOTO")
             await message.answer("Отправь своё фото (селфи).")
             return
         if text == "👀 Цвет глаз":
-            Storage.set_session(user_id, "PROFILE_EDIT_EYES")
+            await Storage.set_session(user_id, "PROFILE_EDIT_EYES")
             await message.answer("Выбери цвет глаз или напиши свой вариант:", reply_markup=menus["eyes"])
             return
         if text == "💇‍♀️ Цвет волос":
-            Storage.set_session(user_id, "PROFILE_EDIT_HAIR_COLOR")
+            await Storage.set_session(user_id, "PROFILE_EDIT_HAIR_COLOR")
             await message.answer("Выбери цвет волос или напиши свой вариант:", reply_markup=menus["hair_color"])
             return
         if text == "📏 Длина волос":
-            Storage.set_session(user_id, "PROFILE_EDIT_HAIR_LENGTH")
+            await Storage.set_session(user_id, "PROFILE_EDIT_HAIR_LENGTH")
             await message.answer("Выбери длину волос или напиши свой вариант:", reply_markup=menus["hair_length"])
             return
         if text == "🖼 По референсу":
-            Storage.set_session(user_id, "GEN_REF_PROFILE_CHOICE", reset_data=True)
+            await Storage.set_session(user_id, "GEN_REF_PROFILE_CHOICE", reset_data=True)
             await message.answer("Использовать параметры из профиля?", reply_markup=menus["yes_no"])
             return
         if text == "✍️ По описанию":
-            Storage.set_session(user_id, "GEN_TEXT_PROFILE_CHOICE", reset_data=True)
+            await Storage.set_session(user_id, "GEN_TEXT_PROFILE_CHOICE", reset_data=True)
             await message.answer("Использовать параметры из профиля?", reply_markup=menus["yes_no"])
             return
         
@@ -369,9 +369,9 @@ async def handle_message(message: types.Message):
             await message.answer("Жду фото (не файл).")
             return
         photo_id = photo[-1].file_id
-        Storage.save_user(user_id, {"photoId": photo_id})
-        Storage.set_session(user_id, "IDLE")
-        await reply_with_profile(message, Storage.get_user(user_id))
+        await Storage.save_user(user_id, {"photoId": photo_id})
+        await Storage.set_session(user_id, "IDLE")
+        await reply_with_profile(message, await Storage.get_user(user_id))
         return
     
     if state.startswith("PROFILE_EDIT_"):
@@ -382,22 +382,22 @@ async def handle_message(message: types.Message):
         }
         field = field_map.get(state)
         if field:
-            Storage.save_user(user_id, {field: text})
-            Storage.set_session(user_id, "IDLE")
-            await reply_with_profile(message, Storage.get_user(user_id))
+            await Storage.save_user(user_id, {field: text})
+            await Storage.set_session(user_id, "IDLE")
+            await reply_with_profile(message, await Storage.get_user(user_id))
             return
 
     # STATE: GEN SETUP - PROFILE CHOICE
     if state in ["GEN_REF_PROFILE_CHOICE", "GEN_TEXT_PROFILE_CHOICE"]:
         is_ref = "REF" in state
         if text == "✅ Да":
-            u = Storage.get_user(user_id)
+            u = await Storage.get_user(user_id)
             if not u.get("photoId"):
                 await message.answer("В профиле нет фото! Загрузи его в меню 'Мой профиль'.")
                 return
             
             next_state = "GEN_REF_WAIT_IMAGE" if is_ref else "GEN_TEXT_WAIT_HINTS"
-            Storage.set_session(user_id, next_state, {
+            await Storage.set_session(user_id, next_state, {
                 "useProfile": True,
                 "userPhotoId": u["photoId"],
                 "userTraits": {"eyes": u.get("eyes"), "hairColor": u.get("hairColor"), "hairLength": u.get("hairLength")}
@@ -407,7 +407,7 @@ async def handle_message(message: types.Message):
         
         if text and "Нет" in text:
             next_state = "GEN_REF_TEMP_PHOTO" if is_ref else "GEN_TEXT_TEMP_PHOTO"
-            Storage.set_session(user_id, next_state, {"useProfile": False})
+            await Storage.set_session(user_id, next_state, {"useProfile": False})
             await message.answer("Отправь фото (селфи) для этой генерации.")
             return
 
@@ -419,15 +419,15 @@ async def handle_message(message: types.Message):
         is_ref = "REF" in state
         if is_ref:
             next_state = "GEN_REF_TEMP_EYES"
-            Storage.set_session(user_id, next_state, {"userPhotoId": photo[-1].file_id})
+            await Storage.set_session(user_id, next_state, {"userPhotoId": photo[-1].file_id})
             await message.answer("Цвет глаз? Выбери вариант или напиши свой.", reply_markup=menus["eyes"])
             return
 
         # Временно отключено для GEN_TEXT: вопросы про цвет глаз/волос.
         # next_state = "GEN_TEXT_TEMP_EYES"
-        # Storage.set_session(user_id, next_state, {"userPhotoId": photo[-1].file_id})
+        # await Storage.set_session(user_id, next_state, {"userPhotoId": photo[-1].file_id})
         # await message.answer("Цвет глаз? Выбери вариант или напиши свой.", reply_markup=menus["eyes"])
-        Storage.set_session(user_id, "GEN_TEXT_WAIT_HINTS", {"userPhotoId": photo[-1].file_id})
+        await Storage.set_session(user_id, "GEN_TEXT_WAIT_HINTS", {"userPhotoId": photo[-1].file_id})
         await message.answer("Опиши идею, пожелания к результату. Или вставь готовый промпт.", reply_markup=ReplyKeyboardRemove())
         return
 
@@ -436,7 +436,7 @@ async def handle_message(message: types.Message):
         traits = data.get("userTraits", {})
         traits["eyes"] = text
         next_state = "GEN_REF_TEMP_HAIR" if is_ref else "GEN_TEXT_TEMP_HAIR"
-        Storage.set_session(user_id, next_state, {"userTraits": traits})
+        await Storage.set_session(user_id, next_state, {"userTraits": traits})
         await message.answer("Цвет волос? Выбери вариант или напиши свой.", reply_markup=menus["hair_color"])
         return
 
@@ -445,7 +445,7 @@ async def handle_message(message: types.Message):
         traits = data.get("userTraits", {})
         traits["hairColor"] = text
         next_state = "GEN_REF_WAIT_IMAGE" if is_ref else "GEN_TEXT_WAIT_HINTS"
-        Storage.set_session(user_id, next_state, {"userTraits": traits})
+        await Storage.set_session(user_id, next_state, {"userTraits": traits})
         await message.answer("Теперь референс." if is_ref else "Опиши идею, пожелания к результату. Или вставь готовый промпт.", reply_markup=ReplyKeyboardRemove())
         return
 
@@ -456,7 +456,7 @@ async def handle_message(message: types.Message):
             return
         def_params = {"ratio": "9:16", "quality": "2K"}
         inline_hints = _normalize_hints(caption)
-        Storage.set_session(
+        await Storage.set_session(
             user_id,
             "GEN_REF_WAIT_PARAMS",
             {"refPhotoId": photo[-1].file_id, "userHints": inline_hints, "params": def_params}
@@ -473,7 +473,7 @@ async def handle_message(message: types.Message):
         is_ref = "REF" in state
         next_state = "GEN_REF_WAIT_PARAMS" if is_ref else "GEN_TEXT_WAIT_PARAMS"
         def_params = {"ratio": "9:16", "quality": "2K"}
-        Storage.set_session(user_id, next_state, {"userHints": hints, "params": def_params})
+        await Storage.set_session(user_id, next_state, {"userHints": hints, "params": def_params})
         if is_ref:
             await message.answer(
                 "Добавь текстовые пожелания (по желанию) и выбери параметры. "
@@ -501,7 +501,7 @@ async def handle_message(message: types.Message):
             return
 
         if text == "❌ Отмена":
-            Storage.set_session(user_id, "IDLE", reset_data=True)
+            await Storage.set_session(user_id, "IDLE", reset_data=True)
             await message.answer("Отмена", reply_markup=menus["main"])
             return
         
@@ -515,7 +515,7 @@ async def handle_message(message: types.Message):
         if "2K" in text: params["quality"] = "2K"; changed = True
 
         if changed:
-            Storage.set_session(user_id, state, {"params": params})
+            await Storage.set_session(user_id, state, {"params": params})
             await message.answer(f"Выбрано: {text}", reply_markup=get_params_keyboard(params))
             return
 
@@ -527,7 +527,7 @@ async def handle_message(message: types.Message):
 
         normalized_text = _normalize_hints(text)
         if normalized_text and is_ref_params:
-            Storage.set_session(user_id, state, {"userHints": normalized_text, "params": params})
+            await Storage.set_session(user_id, state, {"userHints": normalized_text, "params": params})
             await message.answer(
                 "Текстовые пожелания обновил. Можно нажимать «🚀 Генерировать».",
                 reply_markup=get_params_keyboard(params)
@@ -547,13 +547,13 @@ async def handle_message(message: types.Message):
         if text == "🔁 Повторить":
             last = data.get("lastReq")
             if not last:
-                Storage.set_session(user_id, "IDLE", reset_data=True)
+                await Storage.set_session(user_id, "IDLE", reset_data=True)
                 await message.answer("Не удалось восстановить прошлый запрос.", reply_markup=menus["main"])
                 return
             await _run_generation(message, user_id, last)
             return
         
-        Storage.set_session(user_id, "IDLE", reset_data=True)
+        await Storage.set_session(user_id, "IDLE", reset_data=True)
         await message.answer("Меню", reply_markup=menus["main"])
         return
 

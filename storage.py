@@ -9,33 +9,37 @@ sessions_db = modal.Dict.from_name("nano-banana-sessions", create_if_missing=Tru
 
 class Storage:
     @staticmethod
-    def get_user(user_id: int):
-        return users_db.get(user_id)
+    async def get_user(user_id: int):
+        result = await users_db.get.aio(user_id)
+        return result if result is not None else None
 
     @staticmethod
-    def save_user(user_id: int, data: dict):
-        current = users_db.get(user_id, {})
+    async def save_user(user_id: int, data: dict):
+        current = await users_db.get.aio(user_id)
+        if current is None:
+            current = {}
         # Обновляем поля
         current.update(data)
         current["updated_at"] = time.time()
-        users_db[user_id] = current
+        await users_db.put.aio(user_id, current)
 
     @staticmethod
-    def get_session(user_id: int):
-        return sessions_db.get(user_id, {"state": "IDLE", "data": {}})
+    async def get_session(user_id: int):
+        result = await sessions_db.get.aio(user_id)
+        return result if result is not None else {"state": "IDLE", "data": {}}
 
     @staticmethod
-    def set_session(user_id: int, state: str, data_updates: dict = None, reset_data: bool = False):
-        current = sessions_db.get(user_id, {"state": "IDLE", "data": {}})
+    async def set_session(user_id: int, state: str, data_updates: dict = None, reset_data: bool = False):
+        current = await sessions_db.get.aio(user_id) or {"state": "IDLE", "data": {}}
         new_data = {} if reset_data else deepcopy(current.get("data", {}))
         if data_updates:
             new_data.update(deepcopy(data_updates))
         
-        sessions_db[user_id] = {
+        await sessions_db.put.aio(user_id, {
             "state": state,
             "data": new_data
-        }
+        })
     
     @staticmethod
-    def clear_session(user_id: int):
-        sessions_db[user_id] = {"state": "IDLE", "data": {}}
+    async def clear_session(user_id: int):
+        await sessions_db.put.aio(user_id, {"state": "IDLE", "data": {}})

@@ -82,7 +82,7 @@ async def telegram_webhook(request: dict):
         update = Update.model_validate(request)
         ctx = _extract_update_context(update)
         user_id = ctx.get("user_id")
-        session_before = Storage.get_session(user_id)["state"] if user_id else None
+        session_before = (await Storage.get_session(user_id))["state"] if user_id else None
         started_at = time.perf_counter()
 
         print(f"Webhook start: {json.dumps({**ctx, 'session_before': session_before}, ensure_ascii=False)}")
@@ -90,7 +90,7 @@ async def telegram_webhook(request: dict):
         await dp.feed_update(webhook_bot, update)
 
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-        session_after = Storage.get_session(user_id)["state"] if user_id else None
+        session_after = (await Storage.get_session(user_id))["state"] if user_id else None
         print(
             f"Webhook done: {json.dumps({**ctx, 'session_after': session_after, 'elapsed_ms': elapsed_ms}, ensure_ascii=False)}"
         )
