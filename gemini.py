@@ -86,9 +86,13 @@ def get_client():
 
 def get_flash_client():
     """Получает клиент для модели Flash (gemini-2.5-flash)."""
-    api_key = os.environ.get("GEMINI_FLASH_API_KEY")
+    #API_KEY платный, GEMINI_FLASH_API_KEY бесплатный, но с лимитом 2 запросов в день
+    
+    #api_key = os.environ.get("GEMINI_FLASH_API_KEY")#бесплатный
+    api_key = os.environ.get("API_KEY")#платный
     if not api_key:
-        raise ValueError("GEMINI_FLASH_API_KEY not found in environment variables")
+        #raise ValueError("GEMINI_FLASH_API_KEY not found in environment variables")
+        raise ValueError("API_KEY not found in environment variables")
     return genai.Client(api_key=api_key)
 
 async def analyze_style(image_bytes: bytes) -> str:
