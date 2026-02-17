@@ -86,7 +86,7 @@ def get_client():
 
 def get_flash_client():
     """Получает клиент для модели Flash (gemini-2.5-flash)."""
-    #API_KEY платный, GEMINI_FLASH_API_KEY бесплатный, но с лимитом 2 запросов в день
+    #API_KEY платный, GEMINI_FLASH_API_KEY бесплатный, но с лимитом 20 запросов в день
     
     #api_key = os.environ.get("GEMINI_FLASH_API_KEY")#бесплатный
     api_key = os.environ.get("API_KEY")#платный
