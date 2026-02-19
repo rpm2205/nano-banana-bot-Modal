@@ -72,9 +72,43 @@ def _is_transient_genai_error(exc: Exception) -> bool:
     которые имеет смысл повторить (например, 500 INTERNAL).
     """
     text = str(exc)
-    if "INTERNAL" in text or "'code': 500" in text or '"code": 500' in text:
+
+    # 1) Явные текстовые маркеры статусов от API.
+    transient_markers = (
+        "INTERNAL",
+        "UNAVAILABLE",
+        "RESOURCE_EXHAUSTED",
+        "DEADLINE_EXCEEDED",
+        "temporarily unavailable",
+        "high demand",
+        "try again later",
+    )
+    if any(marker in text for marker in transient_markers):
         return True
-    # При необходимости сюда можно добавить другие маркеры.
+
+    # 2) Попытка выцепить числовой код ошибки из текста вида
+    #    "{'error': {'code': 503, ...}}" или "\"code\": 500".
+    for needle in ("'code':", '"code":'):
+        if needle in text:
+            try:
+                # Берём хвост после маркера и вытаскиваем первое число.
+                tail = text.split(needle, 1)[1]
+                # Оставляем только ведущие цифры после маркера.
+                digits = ""
+                for ch in tail:
+                    if ch.isdigit():
+                        digits += ch
+                    elif digits:
+                        break
+                if digits:
+                    code = int(digits)
+                    if 500 <= code <= 599:
+                        return True
+            except Exception:
+                # Любые проблемы парсинга — просто игнорируем.
+                pass
+
+    # По умолчанию считаем ошибку нетранзитной.
     return False
 
 def get_client():

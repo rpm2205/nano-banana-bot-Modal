@@ -199,6 +199,11 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
 
         await message.bot.send_chat_action(chat_id=user_id, action="upload_photo")
 
+        # Сохраняем актуальное описание стиля в req_data,
+        # чтобы его можно было переиспользовать при повторной генерации
+        # даже в случае ошибки.
+        req_data["styleDesc"] = style_desc
+
         result = await generate_final_image(
             face_bytes=face_bytes,
             # В Pro отправляем только фото лица; референс используется только для style-анализa (Flash 2.5).
@@ -251,27 +256,24 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
         )
 
         last_req = req_data.copy()
-        last_req["styleDesc"] = style_desc
         await Storage.set_session(user_id, "RESULT_VIEW", {"lastReq": last_req})
     except Exception as e:
         print(f"Gen Error: {e}")
-        # Возвращаем пользователя в безопасное состояние.
-        # reset_data оставляем, чтобы не залипнуть в промежуточных состояниях,
-        # но сообщение делаем более дружелюбным, особенно для внутренних 500 от модели.
-        await Storage.set_session(user_id, "IDLE", reset_data=True)
+        # Даже при ошибке храним последний запрос, чтобы можно было легко повторить генерацию.
+        last_req = req_data.copy()
+        await Storage.set_session(user_id, "RESULT_VIEW", {"lastReq": last_req})
 
-        # Базовое, «человеческое» сообщение об ошибке генерации.
+        # Базовое, «человеческое» сообщение об ошибке генерации — без технических деталей.
         user_message = (
-            "Сервис генерации сейчас дал внутреннюю ошибку. "
-            "Попробуй, пожалуйста, ещё раз через несколько секунд."
-            if "INTERNAL" in str(e) or "500" in str(e)
-            else f"Ошибка генерации: {str(e)}"
+            "Не удалось завершить генерацию изображения. "
+            "Сервис может быть временно перегружен или недоступен. "
+            "Попробуй, пожалуйста, ещё раз — можно нажать «🔁 Повторить» ниже."
         )
 
         try:
             await _retry_telegram_call(
                 "answer(error_message)",
-                lambda: message.answer(user_message, reply_markup=menus["main"]),
+                lambda: message.answer(user_message, reply_markup=menus["result"]),
             )
         except Exception as send_error:
             print(f"Failed to deliver error message to user: {send_error}")
