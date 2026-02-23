@@ -184,6 +184,33 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
     await message.answer("🍌 Генерирую...", reply_markup=ReplyKeyboardRemove())
     await Storage.set_session(user_id, "PROCESSING")
 
+    # Запускаем фоновый воркер, который раз в ~100 секунд шлёт пользователю,
+    # что процесс ещё идёт, пока генерация не закончится.
+    progress_done = asyncio.Event()
+
+    async def _progress_worker():
+        try:
+            # Максимум 5 сообщений о прогрессе (примерно на 8–9 минут суммарно).
+            for step in range(1, 6):
+                await asyncio.sleep(100)
+                if progress_done.is_set():
+                    break
+                try:
+                    await _retry_telegram_call(
+                        f"answer(progress_{step})",
+                        lambda: message.answer(
+                            "Генерация всё ещё идёт, это может занять несколько минут...",
+                            reply_markup=ReplyKeyboardRemove(),
+                        ),
+                    )
+                except Exception as progress_error:
+                    print(f"Progress message error: {progress_error}")
+                    break
+        except Exception as worker_error:
+            print(f"Progress worker failed: {worker_error}")
+
+    asyncio.create_task(_progress_worker())
+
     try:
         face_bytes = await download_file(message.bot, req_data["userPhotoId"])
 
@@ -204,15 +231,22 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
         # даже в случае ошибки.
         req_data["styleDesc"] = style_desc
 
-        result = await generate_final_image(
-            face_bytes=face_bytes,
-            # В Pro отправляем только фото лица; референс используется только для style-анализa (Flash 2.5).
-            style_bytes=None,
-            user_traits=req_data.get("userTraits", {}),
-            style_desc=style_desc,
-            user_hints=req_data.get("userHints"),
-            params=params
-        )
+        # Мягкий таймаут вокруг вызова модели, чтобы не висеть бесконечно.
+        try:
+            result = await asyncio.wait_for(
+                generate_final_image(
+                    face_bytes=face_bytes,
+                    # В Pro отправляем только фото лица; референс используется только для style-анализa (Flash 2.5).
+                    style_bytes=None,
+                    user_traits=req_data.get("userTraits", {}),
+                    style_desc=style_desc,
+                    user_hints=req_data.get("userHints"),
+                    params=params,
+                ),
+                timeout=300,  # 5 минут
+            )
+        except asyncio.TimeoutError:
+            raise TimeoutError("Image generation timed out after 300 seconds")
 
         mime_type = (result.get("mime_type") or "image/jpeg").lower()
         ext = "jpg" if "jpeg" in mime_type else "png" if "png" in mime_type else "jpg"
@@ -257,6 +291,8 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
 
         last_req = req_data.copy()
         await Storage.set_session(user_id, "RESULT_VIEW", {"lastReq": last_req})
+        # Останавливаем прогресс-воркер.
+        progress_done.set()
     except Exception as e:
         print(f"Gen Error: {e}")
         # Даже при ошибке храним последний запрос, чтобы можно было легко повторить генерацию.
@@ -270,6 +306,8 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
             "Попробуй, пожалуйста, ещё раз — можно нажать «🔁 Повторить» ниже."
         )
 
+        # Останавливаем прогресс-воркер и пытаемся сообщить пользователю об ошибке.
+        progress_done.set()
         try:
             await _retry_telegram_call(
                 "answer(error_message)",
