@@ -58,7 +58,7 @@ app = modal.App("nano-banana-bot", image=image)
 # Подключаем секреты (API ключи)
 secrets = [modal.Secret.from_name("nano-banana-bot-secrets")]
 
-@app.function(secrets=secrets, min_containers=1)
+@app.function(secrets=secrets, min_containers=1, timeout=600)
 @modal.fastapi_endpoint(method="POST")
 async def telegram_webhook(request: dict):
     """
