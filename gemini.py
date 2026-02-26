@@ -252,7 +252,8 @@ async def analyze_style(image_bytes: bytes) -> str:
             }
         )
         
-        response = client.models.generate_content(
+        response = await asyncio.to_thread(
+            client.models.generate_content,
             model='gemini-2.5-flash',
             contents=[
                 types.Content(
@@ -340,7 +341,8 @@ async def generate_final_image(face_bytes: bytes, style_bytes: bytes | None, use
 
     for attempt in range(1, max_attempts + 1):
         try:
-            response = client.models.generate_content(
+            response = await asyncio.to_thread(
+                client.models.generate_content,
                 model='gemini-3-pro-image-preview',
                 contents=[types.Content(parts=parts)],
                 config=types.GenerateContentConfig(
