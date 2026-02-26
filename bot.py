@@ -184,9 +184,12 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
     await message.answer("🍌 Генерирую...", reply_markup=ReplyKeyboardRemove())
     await Storage.set_session(user_id, "PROCESSING")
 
-    # Запускаем фоновый воркер, который раз в ~100 секунд шлёт пользователю,
-    # что процесс ещё идёт, пока генерация не закончится.
+    # Фоновый воркер для периодических сообщений о прогрессе.
     progress_done = asyncio.Event()
+    # Воркеры для индикации "печатает..." и "отправляет фото...".
+    typing_done = asyncio.Event()
+    upload_done = asyncio.Event()
+    upload_worker_started = {"value": False}
 
     async def _progress_worker():
         try:
@@ -209,7 +212,54 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
         except Exception as worker_error:
             print(f"Progress worker failed: {worker_error}")
 
+    async def _typing_worker():
+        """
+        Поддерживает статус «Печатает...» до тех пор, пока не начнётся отправка фото.
+        """
+        try:
+            while not typing_done.is_set():
+                try:
+                    await _retry_telegram_call(
+                        "chat_action(typing)",
+                        lambda: message.bot.send_chat_action(
+                            chat_id=user_id, action="typing"
+                        ),
+                    )
+                except Exception as typing_error:
+                    print(f"Typing action error: {typing_error}")
+                    break
+                await asyncio.sleep(4)
+        except Exception as worker_error:
+            print(f"Typing worker failed: {worker_error}")
+
+    async def _upload_worker():
+        """
+        Поддерживает статус «Отправляет фото...» до тех пор, пока фото не будет отправлено
+        или не произойдёт ошибка.
+        """
+        try:
+            while not upload_done.is_set():
+                try:
+                    await _retry_telegram_call(
+                        "chat_action(upload_photo)",
+                        lambda: message.bot.send_chat_action(
+                            chat_id=user_id, action="upload_photo"
+                        ),
+                    )
+                except Exception as upload_error:
+                    print(f"Upload action error: {upload_error}")
+                    break
+                await asyncio.sleep(4)
+        except Exception as worker_error:
+            print(f"Upload worker failed: {worker_error}")
+
+    def _start_upload_worker_once():
+        if not upload_worker_started["value"]:
+            upload_worker_started["value"] = True
+            asyncio.create_task(_upload_worker())
+
     asyncio.create_task(_progress_worker())
+    asyncio.create_task(_typing_worker())
 
     try:
         face_bytes = await download_file(message.bot, req_data["userPhotoId"])
@@ -219,12 +269,13 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
         is_text_flow = not bool(req_data.get("refPhotoId"))
 
         if (not is_text_flow) and req_data.get("refPhotoId"):
-            await message.bot.send_chat_action(chat_id=user_id, action="typing")
             style_bytes = await download_file(message.bot, req_data["refPhotoId"])
             if not style_desc:
                 style_desc = await analyze_style(style_bytes)
 
-        await message.bot.send_chat_action(chat_id=user_id, action="upload_photo")
+        # Переходим из статуса «Печатает...» в «Отправляет фото...».
+        typing_done.set()
+        _start_upload_worker_once()
 
         # Сохраняем актуальное описание стиля в req_data,
         # чтобы его можно было переиспользовать при повторной генерации
@@ -315,6 +366,10 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
             )
         except Exception as send_error:
             print(f"Failed to deliver error message to user: {send_error}")
+    finally:
+        # На всякий случай останавливаем индикаторы действий.
+        typing_done.set()
+        upload_done.set()
 
 async def reply_with_profile(message: types.Message, user: dict):
     text = f"👤 *Ваш профиль:*\n\n"
