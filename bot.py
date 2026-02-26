@@ -83,7 +83,6 @@ menus = {
     ], resize_keyboard=True)
 }
 
-MAX_CAPTION_LEN = 1024
 download_cache = {}
 TRANSIENT_NETWORK_MARKERS = (
     "ClientOSError",
@@ -96,15 +95,12 @@ TRANSIENT_NETWORK_MARKERS = (
     "Temporary failure in name resolution",
 )
 
-def _build_result_caption(prompt_text: str) -> str:
+def _build_result_prompt_message(prompt_text: str) -> str:
     prompt_for_user = "\n".join(
         line for line in (prompt_text or "").splitlines()
         if "СУБЪЕКТ: человек с первого изображения." not in line
     ).strip()
-    caption_prefix = "Промпт:\n"
-    allowed_prompt_len = max(0, MAX_CAPTION_LEN - len(caption_prefix))
-    truncated_prompt = prompt_for_user[:allowed_prompt_len]
-    escaped_prompt = html.escape(truncated_prompt or "-")
+    escaped_prompt = html.escape(prompt_for_user or "-")
     return f"<blockquote expandable>Промпт:\n{escaped_prompt}</blockquote>"
 
 def _quality_label(quality: str) -> str:
@@ -312,10 +308,9 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
         ext = "jpg" if "jpeg" in mime_type else "png" if "png" in mime_type else "jpg"
         image_bytes = result["image"]
         print(f"Generated image: mime={mime_type}, bytes={len(image_bytes)}")
-        image_file = BufferedInputFile(image_bytes, filename=f"result.{ext}")
         quality = params.get("quality", "2K")
         generation_id = f"{user_id}:{int(time.time() * 1000)}"
-        caption = _build_result_caption(result.get("prompt", ""))
+        prompt_message = _build_result_prompt_message(result.get("prompt", ""))
         download_cache[generation_id] = {
             "user_id": user_id,
             "image": image_bytes,
@@ -328,8 +323,6 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
                 "answer_photo(result)",
                 lambda: message.answer_photo(
                     BufferedInputFile(image_bytes, filename=f"result.{ext}"),
-                    caption=caption,
-                    parse_mode="HTML",
                     reply_markup=_get_download_keyboard(quality, generation_id),
                 ),
             )
@@ -343,6 +336,11 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
                     reply_markup=_get_download_keyboard(quality, generation_id),
                 ),
             )
+
+        await _retry_telegram_call(
+            "answer(prompt_message)",
+            lambda: message.answer(prompt_message, parse_mode="HTML"),
+        )
 
         await _retry_telegram_call(
             "answer(next_step)",
