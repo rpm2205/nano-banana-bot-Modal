@@ -43,9 +43,106 @@ def _normalize_user_prompt_text(value: str) -> str:
     if not value:
         return ""
     lines = [line.strip() for line in value.splitlines() if line.strip()]
-    if lines and lines[0].lower() == "промпт:":
+
+    # Убираем внешнюю обёртку "Промпт:" (как её показывает UI),
+    # чтобы пользователь мог копировать блок целиком.
+    lower_first = lines[0].lower() if lines else ""
+    if lower_first.startswith("промпт:"):
         lines = lines[1:]
-    return "\n".join(lines).strip()
+
+    text = "\n".join(lines)
+    text = _strip_markdown_basic(text)
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    lines = _drop_heading_like_lines(lines)
+
+    # Если в начале текста есть служебные вводные фразы от модели,
+    # вроде "Вот готовый промпт для генерации изображения...", вырезаем их.
+    text = "\n".join(lines).strip()
+    text = _strip_bad_style_prefixes(text)
+    return text.strip()
+
+
+def _strip_markdown_basic(value: str) -> str:
+    """
+    Убирает базовую Markdown-разметку (жирный/курсив, backticks, простые заголовки и маркеры списков),
+    чтобы один и тот же текст можно было безопасно копировать между сценариями.
+    """
+    if not value:
+        return ""
+    text = value
+
+    # Убираем backticks и жирное/курсивное Markdown.
+    text = text.replace("`", "")
+    text = text.replace("**", "").replace("__", "")
+
+    # Убираем типичные markdown-заголовки и маркеры списков.
+    cleaned_lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        # Заголовки вида "#", "##", "###".
+        if line.startswith("#"):
+            line = line.lstrip("#").strip()
+
+        # Маркеры списков "- " и "* " в начале строки.
+        if line.startswith(("- ", "* ")):
+            line = line[2:].strip()
+
+        if line:
+            cleaned_lines.append(line)
+
+    return "\n".join(cleaned_lines).strip()
+
+
+_HEADING_PATTERNS = (
+    "промпт:",
+    "стиль:",
+    "детали макияжа:",
+    "объект:",
+)
+
+
+def _drop_heading_like_lines(lines: list[str]) -> list[str]:
+    """
+    Убирает строки, которые выглядят как служебные заголовки ("ПРОМПТ:", "СТИЛЬ:" и т.п.),
+    чтобы при повторном использовании текста не плодить лишние уровни обёртки.
+    """
+    result: list[str] = []
+    for line in lines:
+        lower = line.lower().strip()
+        if lower in _HEADING_PATTERNS:
+            continue
+        result.append(line)
+    return result
+
+
+_BAD_STYLE_PREFIXES = (
+    "вот готовый промпт для генерации изображения в nano banana, максимально соответствующий референсу:",
+    "вот готовый промпт для генерации изображения, максимально соответствующий референсу:",
+)
+
+
+def _strip_bad_style_prefixes(text: str) -> str:
+    """
+    Убирает типичные вводные фразы от модели про "вот готовый промпт...",
+    чтобы они не попадали в поле СТИЛЬ и не дублировались при копировании промпта.
+    """
+    if not text:
+        return ""
+
+    lowered = text.lstrip().lower()
+    for prefix in _BAD_STYLE_PREFIXES:
+        if lowered.startswith(prefix):
+            # Находим реальную позицию префикса в исходной строке, чтобы корректно отрезать.
+            idx = lowered.find(prefix)
+            # Смещение относительно оригинального текста может отличаться только пробелами,
+            # поэтому этого достаточно.
+            cut_pos = idx + len(prefix)
+            cleaned = text[cut_pos:]
+            return cleaned.lstrip(" :-\n\t")
+    return text
 
 def _looks_like_structured_prompt(value: str) -> bool:
     text = (value or "").lower()
@@ -135,9 +232,12 @@ async def analyze_style(image_bytes: bytes) -> str:
         client = get_flash_client()
         prompt = (
             "Проанализируй это изображение-референс. "
-            "Сформируй на русском языке готовый промпт для генерации изображения в Nano Banana, "
-            "в котором будут отражены все ключевые детали, в том числе СТИЛЬ, ОСВЕЩЕНИЕ, КОМПОЗИЦИЯ и НАСТРОЕНИЕ сцены, положение объектов в кадре, детальное описание макияжа. "
+            "Сформируй на русском языке готовый текстовый промпт для генерации изображения в Nano Banana, "
+            "в котором будут отражены все ключевые детали: СТИЛЬ, ОСВЕЩЕНИЕ, КОМПОЗИЦИЯ, НАСТРОЕНИЕ сцены, положение объектов в кадре и детальное описание макияжа. "
             "Не описывай цвет и длину волос, а также цвет глаз конкретного человека. "
+            "Ответ верни в виде одного или нескольких связных абзацев обычного текста без списков и заголовков, подробно описывая все важные детали сцены и стиля. "
+            "Не используй Markdown-разметку, кавычки, символы '*', '#', backticks или горизонтальные линии. "
+            "Не добавляй фразы вроде 'Вот готовый промпт...' и не обращайся к Nano Banana напрямую, просто опиши сцену и стиль так, как их нужно сгенерировать. "
         )
 
         _print_genai_call_log(
