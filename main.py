@@ -82,15 +82,43 @@ async def telegram_webhook(request: dict):
         update = Update.model_validate(request)
         ctx = _extract_update_context(update)
         user_id = ctx.get("user_id")
-        session_before = (await Storage.get_session(user_id))["state"] if user_id else None
+
+        # Дедупликация повторно доставленных Telegram обновлений.
+        # Если тот же update_id уже был обработан для данного пользователя,
+        # просто логируем и выходим, не вызывая dp.feed_update.
+        session_before_full = await Storage.get_session(user_id) if user_id else None
+        last_update_id = None
+        if session_before_full:
+            last_update_id = session_before_full.get("data", {}).get("lastUpdateId")
+
+        if user_id is not None and ctx.get("update_id") is not None and last_update_id == ctx["update_id"]:
+            print(
+                f"Webhook duplicate update ignored: {json.dumps({**ctx, 'session_before': session_before_full.get('state')}, ensure_ascii=False)}"
+            )
+            return {"status": "ok"}
+
+        session_before = session_before_full.get("state") if session_before_full else None
         started_at = time.perf_counter()
 
         print(f"Webhook start: {json.dumps({**ctx, 'session_before': session_before}, ensure_ascii=False)}")
 
         await dp.feed_update(webhook_bot, update)
 
+        # Обновляем lastUpdateId в сессии пользователя, чтобы защититься от ретраев Telegram.
+        if user_id is not None and ctx.get("update_id") is not None:
+            session_after_full = await Storage.get_session(user_id)
+            session_after_state = session_after_full.get("state")
+            await Storage.set_session(
+                user_id,
+                session_after_state,
+                data_updates={ "lastUpdateId": ctx["update_id"] },
+                reset_data=False,
+            )
+        else:
+            session_after_full = await Storage.get_session(user_id) if user_id else None
+
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-        session_after = (await Storage.get_session(user_id))["state"] if user_id else None
+        session_after = session_after_full.get("state") if session_after_full else None
         print(
             f"Webhook done: {json.dumps({**ctx, 'session_after': session_after, 'elapsed_ms': elapsed_ms}, ensure_ascii=False)}"
         )
