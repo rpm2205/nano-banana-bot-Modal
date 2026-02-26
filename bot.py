@@ -186,10 +186,9 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
 
     # Фоновый воркер для периодических сообщений о прогрессе.
     progress_done = asyncio.Event()
-    # Воркеры для индикации "печатает..." и "отправляет фото...".
-    typing_done = asyncio.Event()
-    upload_done = asyncio.Event()
-    upload_worker_started = {"value": False}
+    # Флаги и воркеры для индикации "печатает..." и "отправляет фото...".
+    stop_actions = asyncio.Event()
+    upload_phase_started = asyncio.Event()
 
     async def _progress_worker():
         try:
@@ -214,10 +213,11 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
 
     async def _typing_worker():
         """
-        Поддерживает статус «Печатает...» до тех пор, пока не начнётся отправка фото.
+        Поддерживает статус «Печатает...» до тех пор, пока фактически не начнётся фаза
+        отправки фото (upload_phase_started) или не будет явной остановки (stop_actions).
         """
         try:
-            while not typing_done.is_set():
+            while not stop_actions.is_set() and not upload_phase_started.is_set():
                 try:
                     await _retry_telegram_call(
                         "chat_action(typing)",
@@ -235,10 +235,11 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
     async def _upload_worker():
         """
         Поддерживает статус «Отправляет фото...» до тех пор, пока фото не будет отправлено
-        или не произойдёт ошибка.
+        или не произойдёт ошибка (управляется stop_actions).
         """
         try:
-            while not upload_done.is_set():
+            first_tick = True
+            while not stop_actions.is_set():
                 try:
                     await _retry_telegram_call(
                         "chat_action(upload_photo)",
@@ -246,6 +247,11 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
                             chat_id=user_id, action="upload_photo"
                         ),
                     )
+                    if first_tick:
+                        # Как только первая индикация "Отправляет фото..." реально ушла,
+                        # считаем, что фаза upload началась и можно гасить "Печатает...".
+                        upload_phase_started.set()
+                        first_tick = False
                 except Exception as upload_error:
                     print(f"Upload action error: {upload_error}")
                     break
@@ -253,9 +259,11 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
         except Exception as worker_error:
             print(f"Upload worker failed: {worker_error}")
 
+    _upload_worker_started = {"value": False}
+
     def _start_upload_worker_once():
-        if not upload_worker_started["value"]:
-            upload_worker_started["value"] = True
+        if not _upload_worker_started["value"]:
+            _upload_worker_started["value"] = True
             asyncio.create_task(_upload_worker())
 
     asyncio.create_task(_progress_worker())
@@ -274,7 +282,8 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
                 style_desc = await analyze_style(style_bytes)
 
         # Переходим из статуса «Печатает...» в «Отправляет фото...».
-        typing_done.set()
+        # typing_worker продолжает жить, пока upload_worker реально не пошлёт первую
+        # индикацию upload_photo (см. upload_phase_started).
         _start_upload_worker_once()
 
         # Сохраняем актуальное описание стиля в req_data,
@@ -368,8 +377,7 @@ async def _run_generation(message: types.Message, user_id: int, req_data: dict):
             print(f"Failed to deliver error message to user: {send_error}")
     finally:
         # На всякий случай останавливаем индикаторы действий.
-        typing_done.set()
-        upload_done.set()
+        stop_actions.set()
 
 async def reply_with_profile(message: types.Message, user: dict):
     text = f"👤 *Ваш профиль:*\n\n"
