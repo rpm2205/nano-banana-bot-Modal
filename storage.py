@@ -43,3 +43,22 @@ class Storage:
     @staticmethod
     async def clear_session(user_id: int):
         await sessions_db.put.aio(user_id, {"state": "IDLE", "data": {}})
+
+    @staticmethod
+    async def set_last_update_id(user_id: int, update_id: int):
+        """
+        Обновляет lastUpdateId в data текущей сессии одним циклом get+put
+        и возвращает актуальный state после обновления.
+        """
+        current = await sessions_db.get.aio(user_id) or {"state": "IDLE", "data": {}}
+        state = current.get("state", "IDLE")
+        data = deepcopy(current.get("data", {}))
+        data["lastUpdateId"] = update_id
+        await sessions_db.put.aio(
+            user_id,
+            {
+                "state": state,
+                "data": data,
+            },
+        )
+        return state

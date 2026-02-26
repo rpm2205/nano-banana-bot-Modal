@@ -106,21 +106,14 @@ async def telegram_webhook(request: dict):
 
         # Обновляем lastUpdateId в сессии пользователя, чтобы защититься от ретраев Telegram.
         if user_id is not None and ctx.get("update_id") is not None:
-            session_after_full = await Storage.get_session(user_id)
-            session_after_state = session_after_full.get("state")
-            await Storage.set_session(
-                user_id,
-                session_after_state,
-                data_updates={ "lastUpdateId": ctx["update_id"] },
-                reset_data=False,
-            )
+            session_after_state = await Storage.set_last_update_id(user_id, ctx["update_id"])
         else:
             session_after_full = await Storage.get_session(user_id) if user_id else None
+            session_after_state = session_after_full.get("state") if session_after_full else None
 
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-        session_after = session_after_full.get("state") if session_after_full else None
         print(
-            f"Webhook done: {json.dumps({**ctx, 'session_after': session_after, 'elapsed_ms': elapsed_ms}, ensure_ascii=False)}"
+            f"Webhook done: {json.dumps({**ctx, 'session_after': session_after_state, 'elapsed_ms': elapsed_ms}, ensure_ascii=False)}"
         )
         return {"status": "ok"}
     except Exception as e:
