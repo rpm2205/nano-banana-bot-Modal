@@ -33,3 +33,4 @@
 
 # Развитие
 ➡️ Перейти на БД
+- [ ] Test commit from Zoldy to check branch protection
