@@ -3,10 +3,12 @@ import modal
 import json
 import time
 
+
 def _truncate(value: str, limit: int = 120) -> str:
     if not value:
         return ""
     return value if len(value) <= limit else value[:limit] + "...<truncated>"
+
 
 def _extract_update_context(update) -> dict:
     ctx = {
@@ -25,7 +27,9 @@ def _extract_update_context(update) -> dict:
         ctx["event_type"] = "message"
         ctx["user_id"] = getattr(getattr(message, "from_user", None), "id", None)
         ctx["chat_id"] = getattr(getattr(message, "chat", None), "id", None)
-        ctx["text"] = _truncate(getattr(message, "text", None) or getattr(message, "caption", None) or "")
+        ctx["text"] = _truncate(
+            getattr(message, "text", None) or getattr(message, "caption", None) or ""
+        )
     elif callback_query:
         ctx["event_type"] = "callback_query"
         ctx["user_id"] = getattr(getattr(callback_query, "from_user", None), "id", None)
@@ -35,10 +39,10 @@ def _extract_update_context(update) -> dict:
 
     return ctx
 
+
 # Определение образа контейнера
 image = (
-    modal.Image.debian_slim()
-    .pip_install(
+    modal.Image.debian_slim().pip_install(
         "aiogram>=3.0.0",
         "google-genai",
         "requests",
@@ -58,6 +62,7 @@ app = modal.App("nano-banana-bot", image=image)
 # Подключаем секреты (API ключи)
 secrets = [modal.Secret.from_name("nano-banana-bot-secrets")]
 
+
 @app.function(secrets=secrets, min_containers=1, timeout=600)
 @modal.fastapi_endpoint(method="POST")
 async def telegram_webhook(request: dict):
@@ -74,11 +79,11 @@ async def telegram_webhook(request: dict):
         # Инициализируем бота ЗДЕСЬ, внутри функции, где есть секреты
         token = os.environ.get("TELEGRAM_BOT_TOKEN")
         if not token:
-             return {"status": "error", "message": "No token found"}
-        
+            return {"status": "error", "message": "No token found"}
+
         # Создаем временный экземпляр бота для обработки этого запроса
         webhook_bot = Bot(token=token)
-        
+
         update = Update.model_validate(request)
         ctx = _extract_update_context(update)
         user_id = ctx.get("user_id")
@@ -91,25 +96,37 @@ async def telegram_webhook(request: dict):
         if session_before_full:
             last_update_id = session_before_full.get("data", {}).get("lastUpdateId")
 
-        if user_id is not None and ctx.get("update_id") is not None and last_update_id == ctx["update_id"]:
+        if (
+            user_id is not None
+            and ctx.get("update_id") is not None
+            and last_update_id == ctx["update_id"]
+        ):
             print(
                 f"Webhook duplicate update ignored: {json.dumps({**ctx, 'session_before': session_before_full.get('state')}, ensure_ascii=False)}"
             )
             return {"status": "ok"}
 
-        session_before = session_before_full.get("state") if session_before_full else None
+        session_before = (
+            session_before_full.get("state") if session_before_full else None
+        )
         started_at = time.perf_counter()
 
-        print(f"Webhook start: {json.dumps({**ctx, 'session_before': session_before}, ensure_ascii=False)}")
+        print(
+            f"Webhook start: {json.dumps({**ctx, 'session_before': session_before}, ensure_ascii=False)}"
+        )
 
         await dp.feed_update(webhook_bot, update)
 
         # Обновляем lastUpdateId в сессии пользователя, чтобы защититься от ретраев Telegram.
         if user_id is not None and ctx.get("update_id") is not None:
-            session_after_state = await Storage.set_last_update_id(user_id, ctx["update_id"])
+            session_after_state = await Storage.set_last_update_id(
+                user_id, ctx["update_id"]
+            )
         else:
             session_after_full = await Storage.get_session(user_id) if user_id else None
-            session_after_state = session_after_full.get("state") if session_after_full else None
+            session_after_state = (
+                session_after_full.get("state") if session_after_full else None
+            )
 
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
         print(
@@ -119,6 +136,7 @@ async def telegram_webhook(request: dict):
     except Exception as e:
         print(f"Error processing update: {e}")
         return {"status": "error", "message": str(e)}
+
 
 @app.function(secrets=secrets)
 async def set_webhook(url: str):
@@ -130,6 +148,7 @@ async def set_webhook(url: str):
     temp_bot = Bot(token=token)
     await temp_bot.set_webhook(url)
     print(f"✅ Webhook set to: {url}")
+
 
 # Локальный запуск для тестов (polling)
 if __name__ == "__main__":

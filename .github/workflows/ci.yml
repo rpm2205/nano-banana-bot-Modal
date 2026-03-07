@@ -1,0 +1,67 @@
+# Название нашего процесса, будет отображаться в GitHub
+name: Python CI & Formatter
+
+# Триггеры: когда запускать этот процесс
+on:
+  pull_request:
+
+jobs:
+  lint-and-format:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Шаг: Клонируем репозиторий
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          # Нам нужен PAT (Personal Access Token) с правами repo,
+          # чтобы обойти защиту ветки при пуше коммита от бота.
+          token: ${{ secrets.AUTO_FORMAT_PAT }}
+          # Также выкачиваем полную историю, чтобы git мог работать корректно
+          fetch-depth: 0
+          # Указываем имя ветки, чтобы git знал, куда пушить
+          ref: ${{ github.head_ref }}
+
+      # 2. Шаг: Настраиваем окружение Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 3. Шаг: Устанавливаем зависимости (включая black для форматирования)
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install black flake8 pytest
+
+      # 4. Шаг: Автоматически форматируем код с помощью Black
+      - name: Format with Black
+        run: |
+          black .
+
+      # 5. Шаг: Проверяем, были ли изменения, и коммитим их
+      - name: Commit changes
+        run: |
+          # Настраиваем Git-бота
+          git config --global user.name 'Zoldy (CI Bot)'
+          git config --global user.email 'zoldy-bot@example.com'
+          
+          # Проверяем, есть ли изменения после форматирования
+          if ! git diff --quiet; then
+            echo "Code was not formatted. Committing changes..."
+            git add .
+            git commit -m "style: Auto-format code with Black"
+            git push origin ${{ github.head_ref }}
+          else
+            echo "Code is already formatted. Nothing to commit."
+          fi
+
+      # 6. Шаг: Проверяем стиль кода с помощью Flake8 (временно отключено)
+      # - name: Lint with Flake8
+      #   run: |
+      #     flake8 . --count --max-complexity=10 --max-line-length=88 --statistics
+
+      # 7. Шаг: Запускаем тесты с помощью Pytest (временно отключено)
+      # - name: Test with Pytest
+      #   run: |
+      #     pytest
