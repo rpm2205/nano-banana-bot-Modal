@@ -13,10 +13,9 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v4
         with:
-          # Нам нужно получить токен для отправки коммита обратно в ветку
-          # actions/checkout@v4 автоматически использует GITHUB_TOKEN
-          # но для пуша нам нужен токен с правами на запись контента
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Нам нужен PAT (Personal Access Token) с правами repo,
+          # чтобы обойти защиту ветки при пуше коммита от бота.
+          token: ${{ secrets.AUTO_FORMAT_PAT }}
           # Также выкачиваем полную историю, чтобы git мог работать корректно
           fetch-depth: 0
           # Указываем имя ветки, чтобы git знал, куда пушить
