@@ -1,59 +1,68 @@
 # Название нашего процесса, будет отображаться в GitHub
-name: Python CI
+name: Python CI & Formatter
 
 # Триггеры: когда запускать этот процесс
 on:
-  # Запускать для всех Pull Request
   pull_request:
-  # А также запускать при любом пуше в основную ветку 'main'
-  push:
-    branches:
-      - main
 
-# Задачи (jobs), которые нужно выполнить
 jobs:
-  build:
-    # На какой операционной системе запускать
+  lint-and-format:
     runs-on: ubuntu-latest
-
-    # Шаги (steps), которые будут выполняться последовательно
     steps:
-      # 1. Шаг: Клонируем репозиторий, чтобы получить доступ к коду
+      # 1. Шаг: Клонируем репозиторий
       - name: Check out repository code
         uses: actions/checkout@v4
+        with:
+          # Нам нужно получить токен для отправки коммита обратно в ветку
+          # actions/checkout@v4 автоматически использует GITHUB_TOKEN
+          # но для пуша нам нужен токен с правами на запись контента
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # Также выкачиваем полную историю, чтобы git мог работать корректно
+          fetch-depth: 0
+          # Указываем имя ветки, чтобы git знал, куда пушить
+          ref: ${{ github.head_ref }}
 
       # 2. Шаг: Настраиваем окружение Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          # Указываем версию Python, которая используется в проекте
           python-version: '3.11'
 
-      # 3. Шаг: Устанавливаем зависимости
+      # 3. Шаг: Устанавливаем зависимости (включая black для форматирования)
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          # Устанавливаем также flake8 и pytest, если их нет в requirements.txt
-          pip install flake8 pytest
-      
-      # 4. Шаг: Проверяем код-стайл с помощью Black
-      - name: Check format with Black
-        run: |
-          pip install black
-          # --check только проверяет, не изменяя файлы. Если что-то не так - падает с ошибкой
-          black --check .
+          pip install black flake8 pytest
 
-      # 5. Шаг: Проверяем стиль кода с помощью Flake8
+      # 4. Шаг: Автоматически форматируем код с помощью Black
+      - name: Format with Black
+        run: |
+          black .
+
+      # 5. Шаг: Проверяем, были ли изменения, и коммитим их
+      - name: Commit changes
+        run: |
+          # Настраиваем Git-бота
+          git config --global user.name 'Zoldy (CI Bot)'
+          git config --global user.email 'zoldy-bot@example.com'
+          
+          # Проверяем, есть ли изменения после форматирования
+          if ! git diff --quiet; then
+            echo "Code was not formatted. Committing changes..."
+            git add .
+            git commit -m "style: Auto-format code with Black"
+            git push origin ${{ github.head_ref }}
+          else
+            echo "Code is already formatted. Nothing to commit."
+          fi
+
+      # 6. Шаг: Проверяем стиль кода с помощью Flake8 (уже на чистом коде)
       - name: Lint with Flake8
         run: |
-          # Остановить сборку, если есть ошибки, но не учитывать предупреждения.
-          # --count покажет количество нарушений
-          # --max-complexity=10 - проверка на сложность функций
-          # --max-line-length=88 - стандартная длина строки для Black
-          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
+          flake8 . --count --max-complexity=10 --max-line-length=88 --statistics
 
-      # 6. Шаг: Запускаем тесты с помощью Pytest (временно отключено)
+      # 7. Шаг: Запускаем тесты с помощью Pytest (временно отключено)
       # - name: Test with Pytest
       #   run: |
       #     pytest
