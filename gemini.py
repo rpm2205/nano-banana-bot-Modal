@@ -7,6 +7,7 @@ from google.genai import types
 
 FACE_LOCK_RULE = "ВАЖНО: не изменяй внешность человека, черты лица и узнаваемые индивидуальные особенности."
 
+
 def _truncate_text(value: str, limit: int = 240) -> str:
     if not value:
         return ""
@@ -14,11 +15,13 @@ def _truncate_text(value: str, limit: int = 240) -> str:
         return value
     return value[:limit] + "...<truncated>"
 
+
 def _bytes_signature(data: bytes) -> str:
     if not data:
         return "none"
     head = data[:12]
     return head.hex()
+
 
 def _guess_mime_by_magic(data: bytes) -> str:
     if not data:
@@ -33,11 +36,13 @@ def _guess_mime_by_magic(data: bytes) -> str:
         return "image/heic_or_avif"
     return "unknown"
 
+
 def _print_genai_call_log(tag: str, payload: dict) -> None:
     try:
         print(f"{tag}: {json.dumps(payload, ensure_ascii=False)}")
     except Exception:
         print(f"{tag}: {payload}")
+
 
 def _normalize_user_prompt_text(value: str) -> str:
     if not value:
@@ -144,10 +149,20 @@ def _strip_bad_style_prefixes(text: str) -> str:
             return cleaned.lstrip(" :-\n\t")
     return text
 
+
 def _looks_like_structured_prompt(value: str) -> bool:
     text = (value or "").lower()
-    markers = ("сгенерируй", "глаза:", "волосы:", "стиль:", "детали:", "дополнения:", "важно:")
+    markers = (
+        "сгенерируй",
+        "глаза:",
+        "волосы:",
+        "стиль:",
+        "детали:",
+        "дополнения:",
+        "важно:",
+    )
     return any(marker in text for marker in markers)
+
 
 def _ensure_face_lock_rule(prompt_text: str) -> str:
     text = _normalize_user_prompt_text(prompt_text)
@@ -208,6 +223,7 @@ def _is_transient_genai_error(exc: Exception) -> bool:
     # По умолчанию считаем ошибку нетранзитной.
     return False
 
+
 def get_client():
     """Получает клиент для модели Pro (gemini-3-pro-image-preview)."""
     api_key = os.environ.get("API_KEY")
@@ -215,16 +231,18 @@ def get_client():
         raise ValueError("API_KEY not found in environment variables")
     return genai.Client(api_key=api_key)
 
+
 def get_flash_client():
     """Получает клиент для модели Flash (gemini-2.5-flash)."""
-    #API_KEY платный, GEMINI_FLASH_API_KEY бесплатный, но с лимитом 20 запросов в день
-    
-    #api_key = os.environ.get("GEMINI_FLASH_API_KEY")#бесплатный
-    api_key = os.environ.get("API_KEY")#платный
+    # API_KEY платный, GEMINI_FLASH_API_KEY бесплатный, но с лимитом 20 запросов в день
+
+    # api_key = os.environ.get("GEMINI_FLASH_API_KEY")#бесплатный
+    api_key = os.environ.get("API_KEY")  # платный
     if not api_key:
-        #raise ValueError("GEMINI_FLASH_API_KEY not found in environment variables")
+        # raise ValueError("GEMINI_FLASH_API_KEY not found in environment variables")
         raise ValueError("API_KEY not found in environment variables")
     return genai.Client(api_key=api_key)
+
 
 async def analyze_style(image_bytes: bytes) -> str:
     """Анализирует стиль изображения для создания промпта."""
@@ -248,12 +266,12 @@ async def analyze_style(image_bytes: bytes) -> str:
                 "image_magic_mime_guess": _guess_mime_by_magic(image_bytes),
                 "image_head_hex": _bytes_signature(image_bytes),
                 "prompt_preview": _truncate_text(prompt, 300),
-            }
+            },
         )
-        
+
         response = await asyncio.to_thread(
             client.models.generate_content,
-            model='gemini-2.5-flash',
+            model="gemini-2.5-flash",
             contents=[
                 types.Content(
                     parts=[
@@ -261,22 +279,32 @@ async def analyze_style(image_bytes: bytes) -> str:
                         types.Part(text=prompt),
                     ]
                 )
-            ]
+            ],
         )
         return response.text
     except Exception as e:
         print(f"Style Analysis Error: {e}")
-        return "Кинематографичное освещение, фотореалистичный стиль, высокая детализация."
+        return (
+            "Кинематографичное освещение, фотореалистичный стиль, высокая детализация."
+        )
 
-async def generate_final_image(face_bytes: bytes, style_bytes: bytes | None, user_traits: dict, style_desc: str, user_hints: str, params: dict):
+
+async def generate_final_image(
+    face_bytes: bytes,
+    style_bytes: bytes | None,
+    user_traits: dict,
+    style_desc: str,
+    user_hints: str,
+    params: dict,
+):
     """Генерирует финальное изображение."""
     client = get_client()
 
-    image_size = "1K" if params.get('quality') == '1K' else "2K"
-    aspect_ratio = params.get('ratio', '9:16')
-    eyes = user_traits.get('eyes') or "естественные"
-    hair_color = user_traits.get('hairColor') or "естественный"
-    hair_length = user_traits.get('hairLength') or "естественная"
+    image_size = "1K" if params.get("quality") == "1K" else "2K"
+    aspect_ratio = params.get("ratio", "9:16")
+    eyes = user_traits.get("eyes") or "естественные"
+    hair_color = user_traits.get("hairColor") or "естественный"
+    hair_length = user_traits.get("hairLength") or "естественная"
     normalized_hints = _normalize_user_prompt_text(user_hints or "")
     use_hints_as_prompt = _looks_like_structured_prompt(normalized_hints)
     has_style_description = bool((style_desc or "").strip())
@@ -303,10 +331,10 @@ async def generate_final_image(face_bytes: bytes, style_bytes: bytes | None, use
     parts = []
     if face_bytes:
         parts.append(types.Part.from_bytes(data=face_bytes, mime_type="image/jpeg"))
-    
+
     if style_bytes:
         parts.append(types.Part.from_bytes(data=style_bytes, mime_type="image/jpeg"))
-        
+
     parts.append(types.Part(text=prompt_text))
 
     _print_genai_call_log(
@@ -324,12 +352,14 @@ async def generate_final_image(face_bytes: bytes, style_bytes: bytes | None, use
             "face_magic_mime_guess": _guess_mime_by_magic(face_bytes),
             "face_head_hex": _bytes_signature(face_bytes),
             "style_bytes_len": len(style_bytes) if style_bytes else 0,
-            "style_magic_mime_guess": _guess_mime_by_magic(style_bytes) if style_bytes else "none",
+            "style_magic_mime_guess": (
+                _guess_mime_by_magic(style_bytes) if style_bytes else "none"
+            ),
             "style_head_hex": _bytes_signature(style_bytes) if style_bytes else "none",
             "style_desc_preview": _truncate_text(style_desc or "", 300),
             "user_hints_preview": _truncate_text(user_hints or "", 300),
             "prompt_preview": _truncate_text(prompt_text, 500),
-        }
+        },
     )
 
     # Модель Gemini 3 Pro Image Preview.
@@ -342,14 +372,14 @@ async def generate_final_image(face_bytes: bytes, style_bytes: bytes | None, use
         try:
             response = await asyncio.to_thread(
                 client.models.generate_content,
-                model='gemini-3-pro-image-preview',
+                model="gemini-3-pro-image-preview",
                 contents=[types.Content(parts=parts)],
                 config=types.GenerateContentConfig(
                     image_config=types.ImageConfig(
                         aspect_ratio=aspect_ratio,
                         image_size=image_size,
                     )
-                )
+                ),
             )
             # Если вызов успешный — выходим из цикла и разбираем ответ ниже.
             break
@@ -392,7 +422,9 @@ async def generate_final_image(face_bytes: bytes, style_bytes: bytes | None, use
 
         for pi, part in enumerate(candidate_parts):
             inline_data = getattr(part, "inline_data", None)
-            inline_mime = getattr(inline_data, "mime_type", None) if inline_data else None
+            inline_mime = (
+                getattr(inline_data, "mime_type", None) if inline_data else None
+            )
             raw_data = getattr(inline_data, "data", None) if inline_data else None
 
             candidate_log["parts"].append(
@@ -400,8 +432,12 @@ async def generate_final_image(face_bytes: bytes, style_bytes: bytes | None, use
                     "index": pi,
                     "has_inline_data": bool(inline_data),
                     "inline_mime": inline_mime,
-                    "inline_data_type": type(raw_data).__name__ if raw_data is not None else None,
-                    "inline_data_len": len(raw_data) if hasattr(raw_data, "__len__") else None,
+                    "inline_data_type": (
+                        type(raw_data).__name__ if raw_data is not None else None
+                    ),
+                    "inline_data_len": (
+                        len(raw_data) if hasattr(raw_data, "__len__") else None
+                    ),
                     "text_preview": _truncate_text(getattr(part, "text", "")),
                 }
             )
@@ -416,7 +452,7 @@ async def generate_final_image(face_bytes: bytes, style_bytes: bytes | None, use
                 return {
                     "image": image_data,
                     "mime_type": mime_type,
-                    "prompt": prompt_text
+                    "prompt": prompt_text,
                 }
 
         diagnostics["candidates"].append(candidate_log)
