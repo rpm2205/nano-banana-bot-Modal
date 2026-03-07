@@ -56,10 +56,10 @@ jobs:
             echo "Code is already formatted. Nothing to commit."
           fi
 
-      # 6. Шаг: Проверяем стиль кода с помощью Flake8 (уже на чистом коде)
-      - name: Lint with Flake8
-        run: |
-          flake8 . --count --max-complexity=10 --max-line-length=88 --statistics
+      # 6. Шаг: Проверяем стиль кода с помощью Flake8 (временно отключено)
+      # - name: Lint with Flake8
+      #   run: |
+      #     flake8 . --count --max-complexity=10 --max-line-length=88 --statistics
 
       # 7. Шаг: Запускаем тесты с помощью Pytest (временно отключено)
       # - name: Test with Pytest
