@@ -182,16 +182,25 @@ async def _retry_telegram_call(
     last_error = None
     for attempt in range(1, attempts + 1):
         try:
-            return await call_factory()
+            print(f"Telegram call start: {label}, attempt={attempt}/{attempts}")
+            result = await call_factory()
+            message_id = getattr(result, "message_id", None)
+            print(
+                f"Telegram call ok: {label}, attempt={attempt}/{attempts}, "
+                f"message_id={message_id}"
+            )
+            return result
         except Exception as e:
             last_error = e
-            if not _is_transient_network_error(e) or attempt == attempts:
+            is_transient = _is_transient_network_error(e)
+            print(
+                f"Telegram call failed: {label}, attempt={attempt}/{attempts}, "
+                f"transient={is_transient}, error={e}"
+            )
+            if (not is_transient) or attempt == attempts:
                 raise
             delay = round(base_delay * attempt, 2)
-            print(
-                f"Telegram transient error on {label}, "
-                f"attempt={attempt}/{attempts}, retry_in={delay}s, error={e}"
-            )
+            print(f"Telegram retry scheduled: {label}, retry_in={delay}s")
             await asyncio.sleep(delay)
     raise last_error
 
