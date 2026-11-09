@@ -225,7 +225,7 @@ def _is_transient_genai_error(exc: Exception) -> bool:
 
 
 def get_client():
-    """Получает клиент для модели Pro (gemini-3-pro-image-preview)."""
+    """Получает клиент для модели (gemini-nano-banana-2.1)."""
     api_key = os.environ.get("API_KEY")
     if not api_key:
         raise ValueError("API_KEY not found in environment variables")
@@ -233,7 +233,7 @@ def get_client():
 
 
 def get_flash_client():
-    """Получает клиент для модели Flash (gemini-2.5-flash)."""
+    """Получает клиент для модели Flash (gemini-3.8-flash)."""
     # API_KEY платный, GEMINI_FLASH_API_KEY бесплатный, но с лимитом 20 запросов в день
 
     # api_key = os.environ.get("GEMINI_FLASH_API_KEY")#бесплатный
@@ -261,7 +261,7 @@ async def analyze_style(image_bytes: bytes) -> str:
         _print_genai_call_log(
             "GenAI request analyze_style",
             {
-                "model": "gemini-2.5-flash",
+                "model": "gemini-3.8-flash",
                 "image_bytes_len": len(image_bytes) if image_bytes else 0,
                 "image_magic_mime_guess": _guess_mime_by_magic(image_bytes),
                 "image_head_hex": _bytes_signature(image_bytes),
@@ -271,7 +271,7 @@ async def analyze_style(image_bytes: bytes) -> str:
 
         response = await asyncio.to_thread(
             client.models.generate_content,
-            model="gemini-2.5-flash",
+            model="gemini-3.8-flash",
             contents=[
                 types.Content(
                     parts=[
@@ -340,7 +340,7 @@ async def generate_final_image(
     _print_genai_call_log(
         "GenAI request generate_final_image",
         {
-            "model": "gemini-3-pro-image-preview",
+            "model": "gemini-nano-banana-2.1",
             "config": {
                 "aspect_ratio": aspect_ratio,
                 "image_size": image_size,
@@ -362,7 +362,7 @@ async def generate_final_image(
         },
     )
 
-    # Модель Gemini 3 Pro Image Preview.
+    # Модель Gemini Nano Banana 2.1.
     # Добавляем простейший ретрай для временных внутренних ошибок (например, 500 INTERNAL),
     # чтобы пользователь с большей вероятностью получал результат в рамках одного сценария.
     last_error: Exception | None = None
@@ -372,7 +372,7 @@ async def generate_final_image(
         try:
             response = await asyncio.to_thread(
                 client.models.generate_content,
-                model="gemini-3-pro-image-preview",
+                model="gemini-nano-banana-2.1",
                 contents=[types.Content(parts=parts)],
                 config=types.GenerateContentConfig(
                     image_config=types.ImageConfig(
@@ -403,7 +403,7 @@ async def generate_final_image(
     # Извлечение картинки из любого candidate/part.
     candidates = response.candidates or []
     diagnostics = {
-        "model": "gemini-3-pro-image-preview",
+        "model": "gemini-nano-banana-2.1",
         "candidate_count": len(candidates),
         "text_preview": _truncate_text(getattr(response, "text", "")),
         "candidates": [],
