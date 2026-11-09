@@ -13,9 +13,6 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v4
         with:
-          # Нам нужен PAT (Personal Access Token) с правами repo,
-          # чтобы обойти защиту ветки при пуше коммита от бота.
-          token: ${{ secrets.AUTO_FORMAT_PAT }}
           # Также выкачиваем полную историю, чтобы git мог работать корректно
           fetch-depth: 0
           # Указываем имя ветки, чтобы git знал, куда пушить
