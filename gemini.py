@@ -225,7 +225,7 @@ def _is_transient_genai_error(exc: Exception) -> bool:
 
 
 def get_client():
-    """Получает клиент для модели (gemini-nano-banana-2.1)."""
+    """Получает клиент для модели Pro (gemini-3-pro-image)."""
     api_key = os.environ.get("API_KEY")
     if not api_key:
         raise ValueError("API_KEY not found in environment variables")
@@ -340,7 +340,7 @@ async def generate_final_image(
     _print_genai_call_log(
         "GenAI request generate_final_image",
         {
-            "model": "gemini-nano-banana-2.1",
+            "model": "gemini-3-pro-image",
             "config": {
                 "aspect_ratio": aspect_ratio,
                 "image_size": image_size,
@@ -362,7 +362,7 @@ async def generate_final_image(
         },
     )
 
-    # Модель Gemini Nano Banana 2.1.
+    # Модель Gemini 3 Pro Image.
     # Добавляем простейший ретрай для временных внутренних ошибок (например, 500 INTERNAL),
     # чтобы пользователь с большей вероятностью получал результат в рамках одного сценария.
     last_error: Exception | None = None
@@ -372,7 +372,7 @@ async def generate_final_image(
         try:
             response = await asyncio.to_thread(
                 client.models.generate_content,
-                model="gemini-nano-banana-2.1",
+                model="gemini-3-pro-image",
                 contents=[types.Content(parts=parts)],
                 config=types.GenerateContentConfig(
                     image_config=types.ImageConfig(
@@ -403,7 +403,7 @@ async def generate_final_image(
     # Извлечение картинки из любого candidate/part.
     candidates = response.candidates or []
     diagnostics = {
-        "model": "gemini-nano-banana-2.1",
+        "model": "gemini-3-pro-image",
         "candidate_count": len(candidates),
         "text_preview": _truncate_text(getattr(response, "text", "")),
         "candidates": [],
